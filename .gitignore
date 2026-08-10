@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific secrets and outputs
+.env
+.cache-spotify
+credentials.json
+history.csv
+session_log.txt
