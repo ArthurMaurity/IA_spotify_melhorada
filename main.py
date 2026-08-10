@@ -22,14 +22,14 @@ PRESETS = {
     "1": ("Default Flow", ""),
     "2": (
         "Gaming Mode",
-        "High energy and focus, either for competitive/management play "
-        "(EA FC 26, managing Tottenham) or immersive atmospheric background "
-        "(Baldur's Gate 3). Match intensity to what a gaming session needs.",
+        "High energy and focus for competitive matches, or immersive "
+        "atmospheric background for RPGs and story-driven games. Match "
+        "intensity to what the gaming session needs.",
     ),
     "3": (
-        "Data/Coding Mode",
+        "Work/Study Mode",
         "Instrumentals and Lo-fi only, minimal or no vocals, steady low-key "
-        "energy suited for deep focus work on Python/Pandas/Supabase tasks.",
+        "energy suited for deep focus work or study.",
     ),
 }
 
@@ -53,8 +53,8 @@ def choose_preset():
     hr()
     print(f"  {BOLD}Session Preset{RESET}")
     print(f"  {BOLD}1{RESET}  Default Flow")
-    print(f"  {BOLD}2{RESET}  Gaming Mode    {DIM}EA FC 26 (Tottenham) / Baldur's Gate 3{RESET}")
-    print(f"  {BOLD}3{RESET}  Data/Coding Mode  {DIM}instrumentals & lo-fi for deep focus{RESET}")
+    print(f"  {BOLD}2{RESET}  Gaming Mode      {DIM}competitive energy / immersive RPG background{RESET}")
+    print(f"  {BOLD}3{RESET}  Work/Study Mode  {DIM}instrumentals & lo-fi for deep focus{RESET}")
     hr()
     choice = input("preset > ").strip()
     name, text = PRESETS.get(choice, PRESETS["1"])
