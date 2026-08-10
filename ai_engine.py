@@ -94,21 +94,30 @@ class AIEngine:
 
     @staticmethod
     def _parse(raw: str) -> dict:
-        """Parse the model reply, tolerating stray fences or leading prose."""
+        """Parse the model reply, tolerating stray fences, prose, or a bare array."""
         if not raw:
             return {}
         text = raw.strip()
         text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
+
+        parsed = None
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-            if not match:
-                return {}
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                return {}
+            # Aggressively grab the first JSON object or array in the reply,
+            # ignoring any prose/apologies/explanations before or after it.
+            match = re.search(r"(\[.*\]|\{.*\})", text, flags=re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    parsed = None
+
+        if isinstance(parsed, list):
+            return {"tracks": parsed}
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
 
     # ---------- public API ----------
 
@@ -143,7 +152,9 @@ class AIEngine:
             response = self.client.models.generate_content(
                 model=config.GEMINI_MODEL, contents=prompt, config=self.gen_config
             )
-            data = self._parse(getattr(response, "text", "") or "")
+            raw_text = getattr(response, "text", "") or ""
+            print("RAW GEMINI:", raw_text)
+            data = self._parse(raw_text)
         except Exception as exc:  # quota, network, safety block...
             return [], "", f"Gemini error: {exc}"
 
