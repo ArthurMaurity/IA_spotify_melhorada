@@ -2,7 +2,7 @@
 // Keeps the Groq API key server-side; the browser never sees it.
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama3-8b-8192';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 const SYSTEM_PROMPT = [
   'You are an expert AI DJ curating a Spotify queue.',
