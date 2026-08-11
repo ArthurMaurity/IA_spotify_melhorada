@@ -75,6 +75,15 @@
         </div>
       </div>
 
+      <div class="card" style="display:flex;flex-direction:column;gap:var(--space-3);">
+        <div class="card-kicker">My Turn</div>
+        <p class="card-body" style="margin:0;color:var(--color-neutral-300);">Describe what you want next and get suggestions right away, without waiting for the current track to end.</p>
+        <div style="display:flex;gap:var(--space-2);">
+          <input class="input" style="flex:1;" type="text" value="{{ myTurnDraft }}" onChange="{{ updateMyTurnDraft }}" placeholder="e.g. slow it down, more chill and acoustic..." />
+          <button type="button" class="{{ suggestBtnClass }}" onClick="{{ manualSuggest }}" disabled="{{ isThinking }}">{{ suggestBtnLabel }}</button>
+        </div>
+      </div>
+
     </main>
 
     <div ref="{{ logRef }}" style="background:var(--color-neutral-900);border-top:1px solid var(--color-neutral-700);font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:1.8;padding:var(--space-4) var(--space-6);height:160px;overflow-y:auto;color:var(--color-neutral-300);">
@@ -117,7 +126,8 @@ class Component extends DCLogic {
     track: null,
     activeMode: null,
     isThinking: false,
-    logs: []
+    logs: [],
+    myTurnDraft: ''
   };
 
   pollInterval = null;
@@ -272,17 +282,30 @@ class Component extends DCLogic {
     this.addLog(this.state.activeMode === modeId ? '> Mode cleared.' : '> Mode set to ' + MODES[modeId].label + '.');
   };
 
+  updateMyTurnDraft = (e) => this.setState({ myTurnDraft: e.target.value });
+
+  manualSuggest = () => {
+    if (this.state.isThinking) return;
+    const prompt = this.state.myTurnDraft.trim();
+    this.setState({ myTurnDraft: '' });
+    this.triggerDJ(this.state.track, prompt);
+  };
+
   triggerDJ = async (track, customPrompt) => {
     this.setState({ isThinking: true });
-    this.addLog('> "' + track.name + '" by ' + track.artists + ' is past 66% — analyzing vibe...');
+    if (track) {
+      this.addLog('> "' + track.name + '" by ' + track.artists + (customPrompt ? '" — My Turn: ' + customPrompt : ' is past 66% — analyzing vibe...'));
+    } else {
+      this.addLog('> My Turn: ' + customPrompt);
+    }
     const mode = MODES[this.state.activeMode] || MODES.default;
     try {
       const groqRes = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          track: track.name,
-          artist: track.artists,
+          track: track ? track.name : '',
+          artist: track ? track.artists : '',
           mode: mode.label + ': ' + mode.vibe,
           customPrompt: customPrompt || ''
         })
@@ -338,7 +361,7 @@ class Component extends DCLogic {
   };
 
   renderVals() {
-    const { accessToken, track, activeMode, isThinking, logs } = this.state;
+    const { accessToken, track, activeMode, isThinking, logs, myTurnDraft } = this.state;
     const connected = !!accessToken;
     const hasTrack = !!track;
     const progressPct = track ? Math.min(100, (track.progressMs / track.durationMs) * 100) : 0;
@@ -368,6 +391,12 @@ class Component extends DCLogic {
       hasLogs: logs.length > 0,
       noLogs: logs.length === 0,
       logRef: this.logRefCallback,
+      isThinking,
+      myTurnDraft,
+      updateMyTurnDraft: this.updateMyTurnDraft,
+      manualSuggest: this.manualSuggest,
+      suggestBtnClass: isThinking ? 'btn btn-secondary' : 'btn btn-primary',
+      suggestBtnLabel: isThinking ? 'Thinking...' : 'Suggest now',
       connectSpotify: this.connectSpotify,
       disconnect: this.disconnect
     };
