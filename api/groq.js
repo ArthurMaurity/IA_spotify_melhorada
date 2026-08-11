@@ -11,13 +11,15 @@ const SYSTEM_PROMPT = [
   'GROUNDING RULE (mandatory): when the prompt gives you "Confirmed Spotify genres" for the artist, treat that as ground truth about the real artist\'s style — it always overrides your own guess if they conflict. When no confirmed genres are given, fall back to your own knowledge of that specific real artist and song.',
   'GOLDEN RULE (mandatory): your suggestions must share the same concrete genre/subgenre, approximate BPM and energy level as the current track — not just a vague "similar vibe". Reject generic mainstream/pop crossover picks unless the source track itself is mainstream pop.',
   'Abrupt jumps in genre, tempo or production style are FORBIDDEN. If the listener\'s instruction demands a real style change, make the first suggested track a bridge that shares elements (tempo, instrumentation, mood) with both the old and new style.',
+  'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest a song or artist that already appears in that history.',
+  'When given the listener\'s usual top genres, use them as a tiebreaker between otherwise-valid picks, but never let them override the golden rule of matching the current track\'s concrete style.',
   'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks. Never repeat the current artist or song.',
   'Suggest between 2 and 4 songs.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
   '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the concrete genre/tempo/production trait shared with the current track"}]}',
 ].join(' ');
 
-function buildUserPrompt({ track, artist, genres, mode, customPrompt }) {
+function buildUserPrompt({ track, artist, genres, history, topGenres, mode, customPrompt }) {
   const parts = [];
   if (track || artist) {
     parts.push(`Current track: "${track || 'unknown'}" by ${artist || 'unknown artist'}.`);
@@ -26,6 +28,12 @@ function buildUserPrompt({ track, artist, genres, mode, customPrompt }) {
     parts.push(`Confirmed Spotify genres for this artist: ${genres.join(', ')}. Use these as ground truth, not your own guess.`);
   } else if (track || artist) {
     parts.push('No confirmed genre data available — use your own knowledge of this specific real artist and song.');
+  }
+  if (Array.isArray(history) && history.length) {
+    parts.push(`Listener's recent history, oldest to newest (last one is most recent): ${history.join(' | ')}.`);
+  }
+  if (Array.isArray(topGenres) && topGenres.length) {
+    parts.push(`Listener's usual top genres overall: ${topGenres.join(', ')}.`);
   }
   if (mode) {
     parts.push(`Session mode / vibe to respect alongside the golden rule: ${mode}.`);
@@ -68,7 +76,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
   }
 
-  const { track, artist, genres, mode, customPrompt } = req.body || {};
+  const { track, artist, genres, history, topGenres, mode, customPrompt } = req.body || {};
 
   try {
     const groqRes = await fetch(GROQ_URL, {
@@ -83,7 +91,7 @@ module.exports = async function handler(req, res) {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt({ track, artist, genres, mode, customPrompt }) },
+          { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, mode, customPrompt }) },
         ],
       }),
     });

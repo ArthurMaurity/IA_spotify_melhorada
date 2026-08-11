@@ -211,7 +211,7 @@ class Component extends DCLogic {
 
   connectSpotify = async () => {
     const redirectUri = window.location.origin + window.location.pathname;
-    const scopes = ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state'].join(' ');
+    const scopes = ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state', 'user-read-recently-played', 'user-top-read'].join(' ');
     const verifier = this.generateCodeVerifier();
     const challenge = await this.generateCodeChallenge(verifier);
     sessionStorage.setItem('spotify_code_verifier', verifier);
@@ -306,6 +306,38 @@ class Component extends DCLogic {
     }
   };
 
+  fetchRecentHistory = async () => {
+    try {
+      const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
+        headers: { Authorization: 'Bearer ' + this.state.accessToken }
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      // Spotify returns newest first; reverse so "most recent" is last, like a timeline.
+      return items.reverse().map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name);
+    } catch (e) {
+      return [];
+    }
+  };
+
+  fetchTopGenres = async () => {
+    try {
+      const res = await fetch('https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=15', {
+        headers: { Authorization: 'Bearer ' + this.state.accessToken }
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const counts = {};
+      for (const artist of (data.items || [])) {
+        for (const g of (artist.genres || [])) counts[g] = (counts[g] || 0) + 1;
+      }
+      return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 8);
+    } catch (e) {
+      return [];
+    }
+  };
+
   triggerDJ = async (track, customPrompt) => {
     this.setState({ isThinking: true });
     if (track) {
@@ -314,8 +346,13 @@ class Component extends DCLogic {
       this.addLog('> My Turn: ' + customPrompt);
     }
     const mode = MODES[this.state.activeMode] || MODES.default;
-    const genres = track ? await this.fetchArtistGenres(track.artistId) : [];
+    const [genres, history, topGenres] = await Promise.all([
+      track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
+      this.fetchRecentHistory(),
+      this.fetchTopGenres()
+    ]);
     if (genres.length) this.addLog('> Confirmed Spotify genres: ' + genres.join(', '));
+    if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
     try {
       const groqRes = await fetch('/api/groq', {
         method: 'POST',
@@ -324,6 +361,8 @@ class Component extends DCLogic {
           track: track ? track.name : '',
           artist: track ? track.artists : '',
           genres,
+          history,
+          topGenres,
           mode: mode.label + ': ' + mode.vibe,
           customPrompt: customPrompt || ''
         })
