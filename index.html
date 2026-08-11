@@ -251,15 +251,16 @@
       } catch (e) { log(`Erro no Spotify: ${e.message}`); }
     }
 
-    // --- GEMINI AI & QUEUE ---
+    // --- GEMINI AI & QUEUE (VERSÃO DETETIVE) ---
     async function triggerAI(track, artist) {
       const geminiKey = localStorage.getItem('gemini_api_key');
-      if (!geminiKey) return log('⚠️ Erro: Nenhuma chave do Gemini configurada. Abra as Configurações.');
+      if (!geminiKey) return log('⚠️ Erro: Nenhuma chave configurada. Abra as Configurações.');
       
       isThinking = true;
       log(`Analisando "${track}" (${Math.floor(66)}% tocado)... Consultando a IA.`);
 
-      const prompt = `Atue como um DJ. A música atual é "${track}" de ${artist}. O modo selecionado é "${currentMode}". Sugira 2 músicas para tocar em seguida. Responda APENAS com um array JSON com as chaves "title" e "artist". Sem formatação markdown, apenas o JSON bruto.`;
+      // Prompt muito mais rígido para evitar que a IA converse
+      const prompt = `Atue como um DJ. A música atual é "${track}" de ${artist}. O modo selecionado é "${currentMode}". Sugira 2 músicas para tocar em seguida. Responda ESTRITAMENTE com um array JSON neste formato exato: [{"title": "Nome da Musica", "artist": "Nome do Artista"}]. Não escreva nenhuma palavra antes ou depois do JSON. Sem formatação markdown.`;
 
       try {
         const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
@@ -269,10 +270,17 @@
         });
 
         const aiData = await aiRes.json();
+        
+        // Verifica se a API do Google devolveu um erro (ex: chave inválida ou API desativada)
+        if (!aiRes.ok || aiData.error) {
+          throw new Error(`API do Google recusou: ${aiData.error ? aiData.error.message : aiRes.status}`);
+        }
+
         let textResponse = aiData.candidates[0].content.parts[0].text;
         
-        // Remove Markdown (```json) se o Gemini enviar
+        // Limpa crases de markdown (```json) caso a IA ainda seja teimosa
         textResponse = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
+        
         const suggestions = JSON.parse(textResponse);
 
         log(`Sugestões da IA recebidas: ${suggestions.map(s => s.title).join(', ')}`);
@@ -281,8 +289,11 @@
           await queueSong(song.title, song.artist);
         }
       } catch (e) {
-        log(`Erro na IA: Não foi possível processar o JSON. Tente novamente no próximo ciclo.`);
+        // Agora ele vai te mostrar EXATAMENTE o que quebrou!
+        log(`❌ Falha no motor: ${e.message}`);
+        console.error("Erro completo:", e);
       }
+      
       isThinking = false;
     }
 
