@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nocturne DJ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: { spotify: '#1DB954', dark: '#121212', card: '#181818' } } }
+    }
+  </script>
+</head>
+<body class="bg-dark text-gray-200 font-sans min-h-screen flex flex-col">
+
+  <!-- Navbar -->
+  <nav class="flex justify-between items-center p-4 bg-black border-b border-gray-800">
+    <div class="font-bold text-xl text-white">🎧 Nocturne DJ</div>
+    <div id="nav-actions" class="hidden flex gap-4">
+      <button onclick="openSettings()" class="text-gray-400 hover:text-white">⚙️ Configurações</button>
+      <button onclick="disconnect()" class="text-red-400 hover:text-red-300">Sair</button>
+    </div>
+  </nav>
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="flex-1 flex flex-col items-center justify-center p-8">
+    <h1 class="text-3xl font-bold mb-4">Bem-vindo ao Nocturne DJ</h1>
+    <p class="text-gray-400 mb-8 text-center max-w-md">Uma IA co-piloto para sua fila do Spotify. Conecte sua conta para começar.</p>
+    <button onclick="connectSpotify()" class="bg-spotify text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition">
+      Conectar com Spotify
+    </button>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" class="hidden flex-1 flex flex-col max-w-4xl w-full mx-auto p-6 gap-6">
+    
+    <!-- Now Playing -->
+    <div class="bg-card p-4 rounded-xl flex items-center gap-4 shadow-lg border border-gray-800">
+      <div id="track-art" class="w-20 h-20 bg-gray-800 rounded-md bg-cover bg-center"></div>
+      <div class="flex-1">
+        <p class="text-xs text-spotify font-bold uppercase tracking-wider mb-1">Tocando Agora</p>
+        <h2 id="track-name" class="text-xl font-bold text-white truncate">Nenhuma música tocando</h2>
+        <p id="track-artist" class="text-gray-400 truncate">Abra o Spotify e dê o play</p>
+      </div>
+    </div>
+
+    <!-- DJ Modes -->
+    <div class="bg-card p-6 rounded-xl border border-gray-800">
+      <h3 class="text-lg font-bold mb-4 text-white">Escolha a Vibe (Modo)</h3>
+      <div class="flex gap-4 flex-wrap">
+        <button onclick="setMode('default')" id="btn-default" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Fluxo Padrão</button>
+        <button onclick="setMode('gaming')" id="btn-gaming" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Modo Gaming</button>
+        <button onclick="setMode('study')" id="btn-study" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Modo Foco</button>
+      </div>
+      <p id="engine-status" class="text-sm text-gray-500 mt-4">🟡 Motor inativo — escolha um modo acima.</p>
+    </div>
+
+    <!-- Terminal Log -->
+    <div class="bg-black border border-gray-800 rounded-xl p-4 h-48 overflow-y-auto font-mono text-xs text-gray-400 flex flex-col gap-1" id="terminal-log">
+      <div>> Sistema iniciado. Aguardando atividade...</div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-card p-6 rounded-xl max-w-md w-full border border-gray-700">
+      <h2 class="text-xl font-bold mb-4 text-white">Configurações da IA</h2>
+      <label class="block text-sm text-gray-400 mb-2">Chave da API Gemini (Gemini API Key)</label>
+      <input type="password" id="gemini-key-input" class="w-full bg-black border border-gray-700 rounded p-2 text-white mb-4" placeholder="AIzaSy...">
+      <p class="text-xs text-gray-500 mb-6">Sua chave fica salva apenas no seu navegador (localStorage).</p>
+      <div class="flex justify-end gap-4">
+        <button onclick="closeSettings()" class="px-4 py-2 text-gray-400 hover:text-white">Cancelar</button>
+        <button onclick="saveSettings()" class="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configurações Principais
+    const CLIENT_ID = 'da88cb72c0e7480fa5d07d651723b926'; // Seu Client ID
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    const SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
+    
+    let accessToken = null;
+    let pollInterval = null;
+    let currentMode = null;
+    let lastTrackId = null;
+    let isThinking = false;
+
+    // --- FUNÇÕES DE INTERFACE ---
+    function log(msg) {
+      const logDiv = document.getElementById('terminal-log');
+      logDiv.innerHTML += `<div>> ${msg}</div>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateUI() {
+      if (accessToken) {
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        document.getElementById('nav-actions').classList.remove('hidden');
+      } else {
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('dashboard').classList.add('hidden');
+        document.getElementById('nav-actions').classList.add('hidden');
+      }
+    }
+
+    function setMode(mode) {
+      currentMode = currentMode === mode ? null : mode;
+      ['default', 'gaming', 'study'].forEach(m => {
+        document.getElementById(`btn-${m}`).classList.toggle('bg-spotify', currentMode === m);
+        document.getElementById(`btn-${m}`).classList.toggle('text-black', currentMode === m);
+      });
+      document.getElementById('engine-status').innerHTML = currentMode ? `🟢 Monitorando fila no modo: <b>${mode}</b>` : `🟡 Motor inativo — escolha um modo acima.`;
+      lastTrackId = null; 
+      log(currentMode ? `Modo alterado para: ${mode}` : `Modo desativado.`);
+    }
+
+    // --- MODAL SETTINGS ---
+    function openSettings() {
+      document.getElementById('gemini-key-input').value = localStorage.getItem('gemini_api_key') || '';
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+    function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
+    function saveSettings() {
+      localStorage.setItem('gemini_api_key', document.getElementById('gemini-key-input').value.trim());
+      log('Chave da API Gemini salva com sucesso.');
+      closeSettings();
+    }
+
+    // --- SPOTIFY AUTH ---
+    function connectSpotify() {
+      const url = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&response_type=token`;
+      window.location.href = url;
+    }
+
+    function disconnect() {
+      sessionStorage.removeItem('spotify_token');
+      window.location.hash = '';
+      window.location.reload();
+    }
+
+    function checkAuth() {
+      const hash = window.location.hash;
+      if (hash && hash.includes('access_token')) {
+        const params = new URLSearchParams(hash.substring(1));
+        accessToken = params.get('access_token');
+        sessionStorage.setItem('spotify_token', accessToken);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else {
+        accessToken = sessionStorage.getItem('spotify_token');
+      }
+      updateUI();
+      if (accessToken) startEngine();
+    }
+
+    // --- O MOTOR (POLLING) ---
+    function startEngine() {
+      log('Conectado ao Spotify. Iniciando motor de monitoramento...');
+      pollSpotify();
+      pollInterval = setInterval(pollSpotify, 15000);
+    }
+
+    async function pollSpotify() {
+      if (!accessToken) return;
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (res.status === 204) return; // Nenhuma música tocando
+        
+        const data = await res.json();
+        if (!data || !data.item) return;
+
+        const trackName = data.item.name;
+        const artistName = data.item.artists.map(a => a.name).join(', ');
+        const progress = data.progress_ms;
+        const duration = data.item.duration_ms;
+        const ratio = progress / duration;
+
+        document.getElementById('track-name').innerText = trackName;
+        document.getElementById('track-artist').innerText = artistName;
+        if(data.item.album.images[0]) {
+          document.getElementById('track-art').style.backgroundImage = `url('${data.item.album.images[0].url}')`;
+        }
+
+        // Regra dos 66%
+        if (currentMode && ratio > 0.66 && lastTrackId !== data.item.id && !isThinking) {
+          lastTrackId = data.item.id;
+          triggerAI(trackName, artistName);
+        }
+      } catch (e) { log(`Erro no Spotify: ${e.message}`); }
+    }
+
+    // --- GEMINI AI & QUEUE ---
+    async function triggerAI(track, artist) {
+      const geminiKey = localStorage.getItem('gemini_api_key');
+      if (!geminiKey) return log('⚠️ Erro: Nenhuma chave do Gemini configurada. Abra as Configurações.');
+      
+      isThinking = true;
+      log(`Analisando "${track}" (${Math.floor(66)}% tocado)... Consultando a IA.`);
+
+      const prompt = `Atue como um DJ. A música atual é "${track}" de ${artist}. O modo selecionado é "${currentMode}". Sugira 2 músicas para tocar em seguida. Responda APENAS com um array JSON com as chaves "title" e "artist". Sem formatação markdown, apenas o JSON bruto.`;
+
+      try {
+        const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+
+        const aiData = await aiRes.json();
+        let textResponse = aiData.candidates[0].content.parts[0].text;
+        
+        // Limpa formatação caso o Gemini seja teimoso
+        textResponse = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const suggestions = JSON.parse(textResponse);
+
+        log(`Sugestões da IA recebidas: ${suggestions.map(s => s.title).join(', ')}`);
+        
+        for (const song of suggestions) {
+          await queueSong(song.title, song.artist);
+        }
+      } catch (e) {
+        log(`Erro na IA: Não foi possível processar o JSON. Tente novamente no próximo ciclo.`);
+      }
+      isThinking = false;
+    }
+
+    async function queueSong(title, artist) {
+      try {
+        // 1. Busca a música no Spotify
+        const q = encodeURIComponent(`track:${title} artist:${artist}`);
+        const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const searchData = await searchRes.json();
+        const trackUri = searchData.tracks?.items[0]?.uri;
+
+        if (!trackUri) return log(`⚠️ Música não encontrada no Spotify: ${title}`);
+
+        // 2. Adiciona à fila
+        const queueRes = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(trackUri)}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        if (queueRes.ok || queueRes.status === 204) {
+          log(`✅ Adicionado à fila: ${title} - ${artist}`);
+        } else {
+          log(`❌ Falha ao adicionar à fila (verifique se há um dispositivo tocando).`);
+        }
+      } catch (e) {
+        log(`Erro ao buscar/adicionar música: ${e.message}`);
+      }
+    }
+
+    // Inicialização
+    window.onload = checkAuth;
+  </script>
+</body>
+</html>
