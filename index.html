@@ -261,6 +261,7 @@ class Component extends DCLogic {
         id: data.item.id,
         name: data.item.name,
         artists: data.item.artists.map(a => a.name).join(', '),
+        artistId: data.item.artists[0] ? data.item.artists[0].id : '',
         albumArt: data.item.album.images[0] ? data.item.album.images[0].url : '',
         progressMs: data.progress_ms || 0,
         durationMs: data.item.duration_ms || 1
@@ -291,6 +292,20 @@ class Component extends DCLogic {
     this.triggerDJ(this.state.track, prompt);
   };
 
+  fetchArtistGenres = async (artistId) => {
+    if (!artistId) return [];
+    try {
+      const res = await fetch('https://api.spotify.com/v1/artists/' + artistId, {
+        headers: { Authorization: 'Bearer ' + this.state.accessToken }
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.genres) ? data.genres : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
   triggerDJ = async (track, customPrompt) => {
     this.setState({ isThinking: true });
     if (track) {
@@ -299,6 +314,8 @@ class Component extends DCLogic {
       this.addLog('> My Turn: ' + customPrompt);
     }
     const mode = MODES[this.state.activeMode] || MODES.default;
+    const genres = track ? await this.fetchArtistGenres(track.artistId) : [];
+    if (genres.length) this.addLog('> Confirmed Spotify genres: ' + genres.join(', '));
     try {
       const groqRes = await fetch('/api/groq', {
         method: 'POST',
@@ -306,6 +323,7 @@ class Component extends DCLogic {
         body: JSON.stringify({
           track: track ? track.name : '',
           artist: track ? track.artists : '',
+          genres,
           mode: mode.label + ': ' + mode.vibe,
           customPrompt: customPrompt || ''
         })
