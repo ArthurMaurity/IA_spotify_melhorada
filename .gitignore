@@ -223,3 +223,6 @@ __marimo__/
 credentials.json
 history.csv
 session_log.txt
+
+.vercel
+.env*

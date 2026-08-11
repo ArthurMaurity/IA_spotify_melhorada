@@ -1,331 +1,378 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nocturne DJ</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: { spotify: '#1DB954', dark: '#121212', card: '#181818' } } }
-    }
-  </script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
 </head>
-<body class="bg-dark text-gray-200 font-sans min-h-screen flex flex-col">
+<body>
+<x-dc>
+<template id="__bundler_thumbnail" data-bg-color="#161826">
+  <svg viewBox="0 0 120 56" xmlns="http://www.w3.org/2000/svg">
+    <rect width="120" height="56" fill="#161826"/>
+    <g stroke="#9184d9" stroke-width="2.5" stroke-linecap="round">
+      <line x1="40" y1="20" x2="40" y2="36"/>
+      <line x1="50" y1="14" x2="50" y2="42"/>
+      <line x1="60" y1="10" x2="60" y2="46"/>
+      <line x1="70" y1="16" x2="70" y2="40"/>
+      <line x1="80" y1="20" x2="80" y2="36"/>
+    </g>
+  </svg>
+</template>
+<helmet>
+  <link rel="stylesheet" href="_ds/nocturne-b5f6e478-0528-47d4-8d35-d6221dd1a427/styles.css">
+  <script src="_ds/nocturne-b5f6e478-0528-47d4-8d35-d6221dd1a427/_ds_bundle.js"></script>
+  <style>
+    body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);}
+    a{color:var(--color-accent-300)}
+    a:hover{color:var(--color-accent)}
+    @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.3}}
+    ::-webkit-scrollbar{width:8px;height:8px}
+    ::-webkit-scrollbar-thumb{background:var(--color-neutral-700);border-radius:99px}
+  </style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;">
 
-  <!-- Navbar -->
-  <nav class="flex justify-between items-center p-4 bg-black border-b border-gray-800">
-    <div class="font-bold text-xl text-white">🎧 Nocturne DJ</div>
-    <div id="nav-actions" class="hidden flex gap-4">
-      <button onclick="openSettings()" class="text-gray-400 hover:text-white">⚙️ Configurações</button>
-      <button onclick="disconnect()" class="text-red-400 hover:text-red-300">Sair</button>
-    </div>
-  </nav>
+  <sc-if value="{{ connected }}" hint-placeholder-val="{{ false }}">
+    <nav class="nav">
+      <span class="nav-brand" style="display:flex;align-items:center;gap:8px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="10" x2="4" y2="14"></line><line x1="9" y1="6" x2="9" y2="18"></line><line x1="14" y1="3" x2="14" y2="21"></line><line x1="19" y1="8" x2="19" y2="16"></line></svg>
+        Nocturne DJ
+      </span>
+      <span class="tag tag-outline" style="margin-left:auto">Connected</span>
+      <button type="button" class="btn btn-ghost" onClick="{{ disconnect }}">Disconnect</button>
+    </nav>
 
-  <!-- Login Screen -->
-  <div id="login-screen" class="flex-1 flex flex-col items-center justify-center p-8">
-    <h1 class="text-3xl font-bold mb-4 text-white">Bem-vindo ao Nocturne DJ</h1>
-    <p class="text-gray-400 mb-8 text-center max-w-md">Uma IA co-piloto para sua fila do Spotify. Conecte sua conta para começar.</p>
-    <button onclick="connectSpotify()" class="bg-spotify text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition">
-      Conectar com Spotify
-    </button>
-  </div>
+    <main style="flex:1;padding:var(--space-8) var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-6);max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;">
 
-  <!-- Dashboard -->
-  <div id="dashboard" class="hidden flex-1 flex flex-col max-w-4xl w-full mx-auto p-6 gap-6">
-    
-    <!-- Now Playing -->
-    <div class="bg-card p-4 rounded-xl flex items-center gap-4 shadow-lg border border-gray-800">
-      <div id="track-art" class="w-20 h-20 bg-gray-800 rounded-md bg-cover bg-center"></div>
-      <div class="flex-1">
-        <p class="text-xs text-spotify font-bold uppercase tracking-wider mb-1">Tocando Agora</p>
-        <h2 id="track-name" class="text-xl font-bold text-white truncate">Nenhuma música tocando</h2>
-        <p id="track-artist" class="text-gray-400 truncate">Abra o Spotify e dê o play</p>
+      <div class="card elev-md" style="display:flex;gap:var(--space-5);align-items:center;min-height:96px;">
+        <sc-if value="{{ hasTrack }}" hint-placeholder-val="{{ false }}">
+          <img src="{{ trackAlbumArt }}" alt="{{ trackName }}" style="width:88px;height:88px;border-radius:var(--radius-md);object-fit:cover;flex:none;box-shadow:var(--shadow-md);" />
+          <div style="flex:1;min-width:0;">
+            <div class="card-kicker">Now playing</div>
+            <div class="card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ trackName }}</div>
+            <div class="card-body" style="margin:2px 0 var(--space-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ trackArtists }}</div>
+            <div style="height:4px;border-radius:999px;background:var(--color-neutral-700);overflow:hidden;">
+              <div style="height:100%;border-radius:999px;background:var(--color-accent);width:{{ progressPctStr }};transition:width 1s linear;"></div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noTrack }}" hint-placeholder-val="{{ true }}">
+          <div class="card-body" style="opacity:.65">Nothing playing on Spotify right now.</div>
+        </sc-if>
       </div>
-    </div>
 
-    <!-- DJ Modes -->
-    <div class="bg-card p-6 rounded-xl border border-gray-800">
-      <h3 class="text-lg font-bold mb-4 text-white">Escolha a Vibe (Modo)</h3>
-      <div class="flex gap-4 flex-wrap">
-        <button onclick="setMode('default')" id="btn-default" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Fluxo Padrão</button>
-        <button onclick="setMode('gaming')" id="btn-gaming" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Modo Gaming</button>
-        <button onclick="setMode('study')" id="btn-study" class="flex-1 bg-gray-800 py-3 rounded-lg hover:bg-gray-700 transition font-medium">Modo Foco</button>
+      <div class="card" style="display:flex;flex-direction:column;gap:var(--space-3);">
+        <div class="card-kicker">DJ Mode</div>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+          <sc-for list="{{ modes }}" as="mode" hint-placeholder-count="3">
+            <button type="button" class="{{ mode.btnClass }}" onClick="{{ mode.onClick }}" style="flex:1;min-width:160px;">{{ mode.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-neutral-300);margin-top:var(--space-1);">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{ statusDotColor }};animation:{{ statusAnim }};flex:none;display:inline-block;"></span>
+          {{ engineStatusText }}
+        </div>
       </div>
-      <p id="engine-status" class="text-sm text-gray-500 mt-4">🟡 Motor inativo — escolha um modo acima.</p>
+
+    </main>
+
+    <div ref="{{ logRef }}" style="background:var(--color-neutral-900);border-top:1px solid var(--color-neutral-700);font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:1.8;padding:var(--space-4) var(--space-6);height:160px;overflow-y:auto;color:var(--color-neutral-300);">
+      <sc-if value="{{ hasLogs }}" hint-placeholder-val="{{ false }}">
+        <sc-for list="{{ logs }}" as="entry" hint-placeholder-count="2">
+          <div>{{ entry.text }}</div>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{ noLogs }}" hint-placeholder-val="{{ true }}">
+        <div style="opacity:.5;">$ waiting for DJ activity...</div>
+      </sc-if>
     </div>
 
-    <!-- Terminal Log -->
-    <div class="bg-black border border-gray-800 rounded-xl p-4 h-48 overflow-y-auto font-mono text-xs text-gray-400 flex flex-col gap-1" id="terminal-log">
-      <div>> Sistema iniciado. Aguardando atividade...</div>
-    </div>
-  </div>
+  </sc-if>
 
-  <!-- Settings Modal -->
-  <div id="settings-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4">
-    <div class="bg-card p-6 rounded-xl max-w-md w-full border border-gray-700">
-      <h2 class="text-xl font-bold mb-4 text-white">Configurações da IA</h2>
-      <label class="block text-sm text-gray-400 mb-2">Chave da API Gemini (Gemini API Key)</label>
-      <input type="password" id="gemini-key-input" class="w-full bg-black border border-gray-700 rounded p-2 text-white mb-4" placeholder="AIzaSy...">
-      <p class="text-xs text-gray-500 mb-6">Sua chave fica salva apenas no seu navegador (localStorage).</p>
-      <div class="flex justify-end gap-4">
-        <button onclick="closeSettings()" class="px-4 py-2 text-gray-400 hover:text-white">Cancelar</button>
-        <button onclick="saveSettings()" class="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200">Salvar</button>
+  <sc-if value="{{ notConnected }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-6);text-align:center;padding:var(--space-6);">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-300)" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="15"></line><line x1="9" y1="4" x2="9" y2="20"></line><line x1="14" y1="2" x2="14" y2="22"></line><line x1="19" y1="7" x2="19" y2="17"></line></svg>
+      <div>
+        <div style="font-family:var(--font-heading);font-weight:500;font-size:32px;margin-bottom:var(--space-2);">Nocturne DJ</div>
+        <p style="max-width:440px;color:var(--color-neutral-300);margin:0 auto;">An AI co-pilot for your Spotify queue. Connect your account and it listens for the right moment to line up what's next.</p>
       </div>
+      <button type="button" class="btn btn-primary" onClick="{{ connectSpotify }}">Connect to Spotify</button>
     </div>
-  </div>
+  </sc-if>
 
-  <script>
-    // Configurações Principais
-    const CLIENT_ID = 'da88cb72c0e7480fa5d07d651723b926'; // Seu Client ID
-    const REDIRECT_URI = window.location.origin + window.location.pathname;
-    const SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
-    
-    let accessToken = null;
-    let pollInterval = null;
-    let currentMode = null;
-    let lastTrackId = null;
-    let isThinking = false;
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const CLIENT_ID = 'da88cb72c0e7480fa5d07d651723b926';
+const MODES = {
+  default: { label: 'Default Flow', vibe: 'a natural continuation of the current energy and genre' },
+  gaming: { label: 'Gaming Mode', vibe: 'high-energy, mostly instrumental or electronic tracks with a driving rhythm, good for focus during gameplay' },
+  study: { label: 'Work & Study', vibe: 'low-lyric, ambient or lo-fi focus music that stays unobtrusive' }
+};
 
-    // --- FUNÇÕES DE INTERFACE ---
-    function log(msg) {
-      const logDiv = document.getElementById('terminal-log');
-      logDiv.innerHTML += `<div>> ${msg}</div>`;
-      logDiv.scrollTop = logDiv.scrollHeight;
-    }
+class Component extends DCLogic {
+  state = {
+    accessToken: null,
+    track: null,
+    activeMode: null,
+    isThinking: false,
+    logs: []
+  };
 
-    function updateUI() {
-      if (accessToken) {
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        document.getElementById('nav-actions').classList.remove('hidden');
-      } else {
-        document.getElementById('login-screen').classList.remove('hidden');
-        document.getElementById('dashboard').classList.add('hidden');
-        document.getElementById('nav-actions').classList.add('hidden');
-      }
-    }
+  pollInterval = null;
+  lastTriggeredId = null;
 
-    function setMode(mode) {
-      currentMode = currentMode === mode ? null : mode;
-      ['default', 'gaming', 'study'].forEach(m => {
-        document.getElementById(`btn-${m}`).classList.toggle('bg-spotify', currentMode === m);
-        document.getElementById(`btn-${m}`).classList.toggle('text-black', currentMode === m);
-      });
-      document.getElementById('engine-status').innerHTML = currentMode ? `🟢 Monitorando fila no modo: <b>${mode}</b>` : `🟡 Motor inativo — escolha um modo acima.`;
-      lastTrackId = null; 
-      log(currentMode ? `Modo alterado para: ${mode}` : `Modo desativado.`);
-    }
+  componentDidMount() {
+    this.restoreSession();
+  }
 
-    // --- MODAL SETTINGS ---
-    function openSettings() {
-      document.getElementById('gemini-key-input').value = localStorage.getItem('gemini_api_key') || '';
-      document.getElementById('settings-modal').classList.remove('hidden');
-    }
-    function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
-    function saveSettings() {
-      localStorage.setItem('gemini_api_key', document.getElementById('gemini-key-input').value.trim());
-      log('Chave da API Gemini salva com sucesso.');
-      closeSettings();
-    }
+  componentWillUnmount() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+  }
 
-    // --- SPOTIFY AUTH (FLUXO PKCE OBRIGATÓRIO) ---
-    function generateRandomString(length) {
-      let text = '';
-      let possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      for (let i = 0; i < length; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-      }
-      return text;
-    }
+  componentDidUpdate() {
+    if (this._logEl) this._logEl.scrollTop = this._logEl.scrollHeight;
+  }
 
-    async function generateCodeChallenge(codeVerifier) {
-      const data = new TextEncoder().encode(codeVerifier);
-      const digest = await window.crypto.subtle.digest('SHA-256', data);
-      return btoa(String.fromCharCode.apply(null, new Uint8Array(digest)))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-    }
+  logRefCallback = (el) => { this._logEl = el; };
 
-    async function connectSpotify() {
-      const codeVerifier = generateRandomString(128);
-      localStorage.setItem('code_verifier', codeVerifier);
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
+  addLog = (text) => {
+    this.setState(s => ({ logs: [...s.logs, { id: Date.now() + Math.random(), text }] }));
+  };
 
-      const args = new URLSearchParams({
-        response_type: 'code',
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        redirect_uri: REDIRECT_URI,
-        code_challenge_method: 'S256',
-        code_challenge: codeChallenge
-      });
+  base64UrlEncode = (bytes) => {
+    let binary = '';
+    for (const b of new Uint8Array(bytes)) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
 
-      window.location = 'https://accounts.spotify.com/authorize?' + args.toString();
-    }
+  generateCodeVerifier = () => {
+    const array = new Uint8Array(64);
+    crypto.getRandomValues(array);
+    return this.base64UrlEncode(array);
+  };
 
-    function disconnect() {
-      sessionStorage.removeItem('spotify_token');
-      window.location.search = '';
-      window.location.hash = '';
-      window.location.reload();
-    }
+  generateCodeChallenge = async (verifier) => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    return this.base64UrlEncode(digest);
+  };
 
-    async function checkAuth() {
-      const urlParams = new URLSearchParams(window.location.search);
-      let code = urlParams.get('code');
-
-      if (code) {
-        // Recebemos o código, agora vamos trocar pelo token de acesso
-        const codeVerifier = localStorage.getItem('code_verifier');
-        const body = new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: code,
-          redirect_uri: REDIRECT_URI,
-          client_id: CLIENT_ID,
-          code_verifier: codeVerifier
-        });
-
-        try {
-          const res = await fetch('https://accounts.spotify.com/api/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: body.toString()
-          });
-          const data = await res.json();
-          if (data.access_token) {
-            accessToken = data.access_token;
-            sessionStorage.setItem('spotify_token', accessToken);
-            // Limpa a URL na barra do navegador para ficar elegante
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        } catch (e) {
-          console.error('Erro na autenticação:', e);
-          log('Erro ao se comunicar com a autenticação do Spotify.');
-        }
-      } else {
-        accessToken = sessionStorage.getItem('spotify_token');
-      }
-
-      updateUI();
-      if (accessToken) startEngine();
-    }
-
-    // --- O MOTOR (POLLING) ---
-    function startEngine() {
-      log('Conectado ao Spotify. Iniciando motor de monitoramento...');
-      pollSpotify();
-      pollInterval = setInterval(pollSpotify, 15000);
-    }
-
-    async function pollSpotify() {
-      if (!accessToken) return;
+  async restoreSession() {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (code) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      const verifier = sessionStorage.getItem('spotify_code_verifier') || '';
       try {
-        const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        if (res.status === 204) return;
-        
-        const data = await res.json();
-        if (!data || !data.item) return;
-
-        const trackName = data.item.name;
-        const artistName = data.item.artists.map(a => a.name).join(', ');
-        const progress = data.progress_ms;
-        const duration = data.item.duration_ms;
-        const ratio = progress / duration;
-
-        document.getElementById('track-name').innerText = trackName;
-        document.getElementById('track-artist').innerText = artistName;
-        if(data.item.album.images[0]) {
-          document.getElementById('track-art').style.backgroundImage = `url('${data.item.album.images[0].url}')`;
-        }
-
-        // Se passar de 66%, aciona a IA
-        if (currentMode && ratio > 0.66 && lastTrackId !== data.item.id && !isThinking) {
-          lastTrackId = data.item.id;
-          triggerAI(trackName, artistName);
-        }
-      } catch (e) { log(`Erro no Spotify: ${e.message}`); }
-    }
-
-    // --- GEMINI AI & QUEUE (VERSÃO DETETIVE REVISADA) ---
-    async function triggerAI(track, artist) {
-      const geminiKey = localStorage.getItem('gemini_api_key');
-      if (!geminiKey) return log('⚠️ Erro: Nenhuma chave configurada. Abra as Configurações.');
-      
-      isThinking = true;
-      log(`Analisando "${track}" (${Math.floor(66)}% tocado)... Consultando a IA.`);
-
-      // Prompt muito mais rígido para evitar que a IA converse
-      const prompt = `Atue como um DJ. A música atual é "${track}" de ${artist}. O modo selecionado é "${currentMode}". Sugira 2 músicas para tocar em seguida. Responda ESTRITAMENTE com um array JSON neste formato exato: [{"title": "Nome da Musica", "artist": "Nome do Artista"}]. Não escreva nenhuma palavra antes ou depois do JSON. Sem formatação markdown.`;
-
-      try {
-        // CORREÇÃO: Utilizando o modelo gemini-2.0-flash exato suportado pela API
-        const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: window.location.origin + window.location.pathname,
+            client_id: CLIENT_ID,
+            code_verifier: verifier
+          })
         });
-
-        const aiData = await aiRes.json();
-        
-        // Verifica se a API do Google devolveu um erro
-        if (!aiRes.ok || aiData.error) {
-          throw new Error(`API do Google recusou: ${aiData.error ? aiData.error.message : aiRes.status}`);
+        if (!tokenRes.ok) {
+          this.addLog('> Spotify token exchange failed (' + tokenRes.status + ').');
+          return;
         }
-
-        let textResponse = aiData.candidates[0].content.parts[0].text;
-        
-        // Limpa crases de markdown (```json) caso a IA ainda seja teimosa
-        textResponse = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
-        
-        const suggestions = JSON.parse(textResponse);
-
-        log(`Sugestões da IA recebidas: ${suggestions.map(s => s.title).join(', ')}`);
-        
-        for (const song of suggestions) {
-          await queueSong(song.title, song.artist);
-        }
+        const tokenData = await tokenRes.json();
+        sessionStorage.setItem('spotify_access_token', tokenData.access_token);
+        sessionStorage.setItem('spotify_token_expiry', String(Date.now() + (tokenData.expires_in || 3600) * 1000));
+        if (tokenData.refresh_token) sessionStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
+        this.setState({ accessToken: tokenData.access_token });
+        this.startPolling();
       } catch (e) {
-        // Mostra EXATAMENTE o que quebrou!
-        log(`❌ Falha no motor: ${e.message}`);
-        console.error("Erro completo:", e);
+        this.addLog('> Spotify token exchange error: ' + e.message);
       }
-      
-      isThinking = false;
+      return;
     }
+    const storedToken = sessionStorage.getItem('spotify_access_token');
+    const storedExpiry = parseInt(sessionStorage.getItem('spotify_token_expiry') || '0', 10);
+    if (storedToken && Date.now() < storedExpiry) {
+      this.setState({ accessToken: storedToken });
+      this.startPolling();
+    }
+  }
 
-    async function queueSong(title, artist) {
-      try {
-        const q = encodeURIComponent(`track:${title} artist:${artist}`);
-        const searchRes = await fetch(`[https://api.spotify.com/v1/search?q=$](https://api.spotify.com/v1/search?q=$){q}&type=track&limit=1`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const searchData = await searchRes.json();
-        const trackUri = searchData.tracks?.items[0]?.uri;
+  connectSpotify = async () => {
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scopes = ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state'].join(' ');
+    const verifier = this.generateCodeVerifier();
+    const challenge = await this.generateCodeChallenge(verifier);
+    sessionStorage.setItem('spotify_code_verifier', verifier);
+    const url = 'https://accounts.spotify.com/authorize?client_id=' + CLIENT_ID +
+      '&response_type=code' +
+      '&redirect_uri=' + encodeURIComponent(redirectUri) +
+      '&scope=' + encodeURIComponent(scopes) +
+      '&code_challenge_method=S256' +
+      '&code_challenge=' + challenge +
+      '&show_dialog=true';
+    window.location.href = url;
+  };
 
-        if (!trackUri) return log(`⚠️ Música não encontrada no Spotify: ${title}`);
+  disconnect = () => {
+    sessionStorage.removeItem('spotify_access_token');
+    sessionStorage.removeItem('spotify_token_expiry');
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    this.setState({ accessToken: null, track: null, activeMode: null });
+  };
 
-        const queueRes = await fetch(`[https://api.spotify.com/v1/me/player/queue?uri=$](https://api.spotify.com/v1/me/player/queue?uri=$){encodeURIComponent(trackUri)}`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+  handleAuthExpired = () => {
+    sessionStorage.removeItem('spotify_access_token');
+    sessionStorage.removeItem('spotify_token_expiry');
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    this.setState({ accessToken: null, track: null });
+    this.addLog('> Spotify session expired. Please reconnect.');
+  };
 
-        if (queueRes.ok || queueRes.status === 204) {
-          log(`✅ Adicionado à fila: ${title} - ${artist}`);
-        } else {
-          log(`❌ Falha ao adicionar à fila (verifique se há um dispositivo tocando).`);
-        }
-      } catch (e) {
-        log(`Erro ao buscar/adicionar música: ${e.message}`);
+  startPolling() {
+    this.pollTick();
+    this.pollInterval = setInterval(this.pollTick, 15000);
+  }
+
+  pollTick = async () => {
+    const token = this.state.accessToken;
+    if (!token) return;
+    try {
+      const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (res.status === 204) { this.setState({ track: null }); return; }
+      if (res.status === 401) { this.handleAuthExpired(); return; }
+      if (!res.ok) { this.addLog('> Spotify poll failed (' + res.status + ')'); return; }
+      const data = await res.json();
+      if (!data || !data.item) { this.setState({ track: null }); return; }
+      const track = {
+        id: data.item.id,
+        name: data.item.name,
+        artists: data.item.artists.map(a => a.name).join(', '),
+        albumArt: data.item.album.images[0] ? data.item.album.images[0].url : '',
+        progressMs: data.progress_ms || 0,
+        durationMs: data.item.duration_ms || 1
+      };
+      this.setState({ track });
+      const ratio = track.durationMs ? track.progressMs / track.durationMs : 0;
+      if (this.state.activeMode && ratio > 0.66 && this.lastTriggeredId !== track.id && !this.state.isThinking) {
+        this.lastTriggeredId = track.id;
+        this.triggerDJ(track);
       }
+    } catch (e) {
+      this.addLog('> Network error while polling Spotify: ' + e.message);
     }
+  };
 
-    // Inicia a verificação de autenticação assim que a página carrega
-    window.onload = checkAuth;
-  </script>
+  selectMode = (modeId) => {
+    this.setState(s => ({ activeMode: s.activeMode === modeId ? null : modeId }));
+    this.lastTriggeredId = null;
+    this.addLog(this.state.activeMode === modeId ? '> Mode cleared.' : '> Mode set to ' + MODES[modeId].label + '.');
+  };
+
+  triggerDJ = async (track, customPrompt) => {
+    this.setState({ isThinking: true });
+    this.addLog('> "' + track.name + '" by ' + track.artists + ' is past 66% — analyzing vibe...');
+    const mode = MODES[this.state.activeMode] || MODES.default;
+    try {
+      const groqRes = await fetch('/api/groq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          track: track.name,
+          artist: track.artists,
+          mode: mode.label + ': ' + mode.vibe,
+          customPrompt: customPrompt || ''
+        })
+      });
+      if (!groqRes.ok) {
+        const errData = await groqRes.json().catch(() => ({}));
+        this.addLog('> AI request failed (' + groqRes.status + '): ' + (errData.error || 'unknown error'));
+        this.setState({ isThinking: false });
+        return;
+      }
+      const groqData = await groqRes.json();
+      const suggestions = (groqData.tracks || []).slice(0, 4);
+      if (!suggestions.length) {
+        this.addLog('> AI returned no suggestions.');
+        this.setState({ isThinking: false });
+        return;
+      }
+      this.addLog('> AI suggests: ' + suggestions.map(s => '"' + s.title + '" by ' + s.artist).join(', '));
+      for (const sug of suggestions) {
+        await this.queueSuggestion({ title: sug.title, artist: sug.artist, reason: sug.why });
+      }
+    } catch (e) {
+      this.addLog('> DJ engine error: ' + e.message);
+    }
+    this.setState({ isThinking: false });
+  };
+
+  queueSuggestion = async (sug) => {
+    const token = this.state.accessToken;
+    try {
+      const q = encodeURIComponent('track:' + sug.title + ' artist:' + sug.artist);
+      const searchRes = await fetch('https://api.spotify.com/v1/search?q=' + q + '&type=track&limit=1', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!searchRes.ok) { this.addLog('> Search failed for "' + sug.title + '"'); return; }
+      const searchData = await searchRes.json();
+      const found = searchData.tracks && searchData.tracks.items && searchData.tracks.items[0];
+      if (!found) { this.addLog('> No Spotify match for "' + sug.title + '" by ' + sug.artist); return; }
+      const queueRes = await fetch('https://api.spotify.com/v1/me/player/queue?uri=' + encodeURIComponent(found.uri), {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (queueRes.ok || queueRes.status === 204) {
+        this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (sug.reason ? ' — ' + sug.reason : ''));
+      } else if (queueRes.status === 404) {
+        this.addLog('> Queue failed: no active Spotify device found.');
+      } else {
+        this.addLog('> Queue failed for "' + found.name + '" (' + queueRes.status + ')');
+      }
+    } catch (e) {
+      this.addLog('> Error queueing "' + sug.title + '": ' + e.message);
+    }
+  };
+
+  renderVals() {
+    const { accessToken, track, activeMode, isThinking, logs } = this.state;
+    const connected = !!accessToken;
+    const hasTrack = !!track;
+    const progressPct = track ? Math.min(100, (track.progressMs / track.durationMs) * 100) : 0;
+    const modes = Object.keys(MODES).map(id => ({
+      id,
+      label: MODES[id].label,
+      btnClass: activeMode === id ? 'btn btn-primary' : 'btn btn-secondary',
+      onClick: () => this.selectMode(id)
+    }));
+    let engineStatusText = 'DJ engine idle — pick a mode to start watching your queue.';
+    if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
+    else if (activeMode) engineStatusText = 'Watching "' + MODES[activeMode].label + '" — will act near track end.';
+    return {
+      connected,
+      notConnected: !connected,
+      hasTrack,
+      noTrack: !hasTrack,
+      trackAlbumArt: track ? track.albumArt : '',
+      trackName: track ? track.name : '',
+      trackArtists: track ? track.artists : '',
+      progressPctStr: progressPct + '%',
+      modes,
+      statusDotColor: activeMode ? 'var(--color-accent)' : 'var(--color-neutral-600)',
+      statusAnim: activeMode ? 'pulse-dot 1.6s ease-in-out infinite' : 'none',
+      engineStatusText,
+      logs,
+      hasLogs: logs.length > 0,
+      noLogs: logs.length === 0,
+      logRef: this.logRefCallback,
+      connectSpotify: this.connectSpotify,
+      disconnect: this.disconnect
+    };
+  }
+}
+</script>
 </body>
 </html>
