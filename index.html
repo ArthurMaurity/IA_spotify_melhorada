@@ -374,15 +374,26 @@ class Component extends DCLogic {
         return;
       }
       const groqData = await groqRes.json();
-      const suggestions = (groqData.tracks || []).slice(0, 4);
-      if (!suggestions.length) {
+      const candidates = (groqData.tracks || []).slice(0, 6);
+      if (!candidates.length) {
         this.addLog('> AI returned no suggestions.');
         this.setState({ isThinking: false });
         return;
       }
-      this.addLog('> AI suggests: ' + suggestions.map(s => '"' + s.title + '" by ' + s.artist).join(', '));
-      for (const sug of suggestions) {
-        await this.queueSuggestion({ title: sug.title, artist: sug.artist, reason: sug.why });
+      const TARGET_QUEUED = 3;
+      let queuedCount = 0;
+      for (const sug of candidates) {
+        if (queuedCount >= TARGET_QUEUED) break;
+        const found = await this.resolveOnSpotify(sug.title, sug.artist);
+        if (!found) {
+          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on Spotify — skipping (likely hallucinated).');
+          continue;
+        }
+        const ok = await this.queueTrack(found, sug.why);
+        if (ok) queuedCount++;
+      }
+      if (queuedCount === 0) {
+        this.addLog('> None of the AI\'s suggestions could be verified on Spotify.');
       }
     } catch (e) {
       this.addLog('> DJ engine error: ' + e.message);
@@ -390,30 +401,41 @@ class Component extends DCLogic {
     this.setState({ isThinking: false });
   };
 
-  queueSuggestion = async (sug) => {
+  resolveOnSpotify = async (title, artist) => {
     const token = this.state.accessToken;
     try {
-      const q = encodeURIComponent('track:' + sug.title + ' artist:' + sug.artist);
+      const q = encodeURIComponent('track:' + title + ' artist:' + artist);
       const searchRes = await fetch('https://api.spotify.com/v1/search?q=' + q + '&type=track&limit=1', {
         headers: { Authorization: 'Bearer ' + token }
       });
-      if (!searchRes.ok) { this.addLog('> Search failed for "' + sug.title + '"'); return; }
+      if (!searchRes.ok) return null;
       const searchData = await searchRes.json();
-      const found = searchData.tracks && searchData.tracks.items && searchData.tracks.items[0];
-      if (!found) { this.addLog('> No Spotify match for "' + sug.title + '" by ' + sug.artist); return; }
+      return (searchData.tracks && searchData.tracks.items && searchData.tracks.items[0]) || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  queueTrack = async (found, reason) => {
+    const token = this.state.accessToken;
+    try {
       const queueRes = await fetch('https://api.spotify.com/v1/me/player/queue?uri=' + encodeURIComponent(found.uri), {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token }
       });
       if (queueRes.ok || queueRes.status === 204) {
-        this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (sug.reason ? ' — ' + sug.reason : ''));
-      } else if (queueRes.status === 404) {
+        this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (reason ? ' — ' + reason : ''));
+        return true;
+      }
+      if (queueRes.status === 404) {
         this.addLog('> Queue failed: no active Spotify device found.');
       } else {
         this.addLog('> Queue failed for "' + found.name + '" (' + queueRes.status + ')');
       }
+      return false;
     } catch (e) {
-      this.addLog('> Error queueing "' + sug.title + '": ' + e.message);
+      this.addLog('> Error queueing "' + found.name + '": ' + e.message);
+      return false;
     }
   };
 

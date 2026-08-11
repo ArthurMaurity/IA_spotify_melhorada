@@ -13,8 +13,9 @@ const SYSTEM_PROMPT = [
   'Abrupt jumps in genre, tempo or production style are FORBIDDEN. If the listener\'s instruction demands a real style change, make the first suggested track a bridge that shares elements (tempo, instrumentation, mood) with both the old and new style.',
   'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest a song or artist that already appears in that history.',
   'When given the listener\'s usual top genres, use them as a tiebreaker between otherwise-valid picks, but never let them override the golden rule of matching the current track\'s concrete style.',
-  'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks. Never repeat the current artist or song.',
-  'Suggest between 2 and 4 songs.',
+  'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks, and never guess a plausible-sounding title you are not confident is a real released song — if you are unsure a specific song exists, pick a different, well-known song by an artist in the same confirmed genre that you are certain is real.',
+  'Never repeat the current artist or song.',
+  'Rank your suggestions from most to least confident that they are real. Provide exactly 6, even if some are less certain — a downstream Spotify lookup will discard any that turn out not to exist, so more real candidates means more usable results.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
   '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the concrete genre/tempo/production trait shared with the current track"}]}',
 ].join(' ');
@@ -111,7 +112,7 @@ module.exports = async function handler(req, res) {
 
     const tracks = parsed.tracks
       .filter((t) => t && t.title && t.artist)
-      .slice(0, 4)
+      .slice(0, 6)
       .map((t) => ({
         title: String(t.title).trim(),
         artist: String(t.artist).trim(),
