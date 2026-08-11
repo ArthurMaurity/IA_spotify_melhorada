@@ -2,25 +2,33 @@
 // Keeps the Groq API key server-side; the browser never sees it.
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.1-8b-instant';
+// 70b has far deeper knowledge of specific artists/subgenres than the 8b-instant
+// tier, which tended to fall back to generic mainstream picks.
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = [
-  'You are an expert AI DJ curating a Spotify queue.',
-  'Suggest between 2 and 4 songs that should play next, staying coherent with the current track\'s genre, tempo and energy unless the listener\'s custom instruction says otherwise.',
+  'You are an expert DJ specialized in seamless transitions, with deep knowledge of genres, subgenres, tempo (BPM) and production style across music history.',
+  'GOLDEN RULE (mandatory): before picking anything, silently identify the specific genre/subgenre, approximate BPM, and energy level of the given track based on the real artist and song. Your suggestions must share those same concrete traits — not just a vague "similar vibe". Reject generic mainstream/pop crossover picks unless the source track itself is mainstream pop.',
+  'Abrupt jumps in genre, tempo or production style are FORBIDDEN. If the listener\'s instruction demands a real style change, make the first suggested track a bridge that shares elements (tempo, instrumentation, mood) with both the old and new style.',
+  'Suggest only real, existing, commercially released songs that actually exist on Spotify. Never invent tracks. Never repeat the current artist or song.',
+  'Suggest between 2 and 4 songs.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
-  '{"tracks":[{"artist":"...","title":"...","why":"one short sentence"}]}',
+  '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the concrete genre/tempo/production trait shared with the current track"}]}',
 ].join(' ');
 
 function buildUserPrompt({ track, artist, mode, customPrompt }) {
   const parts = [];
   if (track || artist) {
-    parts.push(`Current track: "${track || 'unknown'}" by ${artist || 'unknown artist'}.`);
+    parts.push(
+      `Current track: "${track || 'unknown'}" by ${artist || 'unknown artist'}. ` +
+      'First think about this specific track\'s genre/subgenre, BPM and energy, then base your picks on that.'
+    );
   }
   if (mode) {
-    parts.push(`Selected mode: ${mode}.`);
+    parts.push(`Session mode / vibe to respect alongside the golden rule: ${mode}.`);
   }
   if (customPrompt) {
-    parts.push(`Listener's instruction: "${customPrompt}"`);
+    parts.push(`Listener's explicit instruction: "${customPrompt}" — honour it, but still bridge gradually per the golden rule.`);
   }
   parts.push('Suggest exactly 2 to 4 songs that fit.');
   return parts.join(' ');
@@ -68,7 +76,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        temperature: 0.8,
+        temperature: 0.6,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
