@@ -118,7 +118,6 @@
       log(currentMode ? `Modo alterado para: ${mode}` : `Modo desativado.`);
     }
 
-    // --- MODAL SETTINGS ---
     function openSettings() {
       document.getElementById('gemini-key-input').value = localStorage.getItem('gemini_api_key') || '';
       document.getElementById('settings-modal').classList.remove('hidden');
@@ -130,28 +129,82 @@
       closeSettings();
     }
 
-    // --- SPOTIFY AUTH ---
-    function connectSpotify() {
-      const url = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&response_type=token`;
-      window.location.href = url;
+    // --- SPOTIFY AUTH (NOVO FLUXO PKCE) ---
+    function generateRandomString(length) {
+      let text = '';
+      let possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      for (let i = 0; i < length; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+      }
+      return text;
+    }
+
+    async function generateCodeChallenge(codeVerifier) {
+      const data = new TextEncoder().encode(codeVerifier);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+
+    async function connectSpotify() {
+      const codeVerifier = generateRandomString(128);
+      localStorage.setItem('code_verifier', codeVerifier);
+      const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+      const args = new URLSearchParams({
+        response_type: 'code',
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        redirect_uri: REDIRECT_URI,
+        code_challenge_method: 'S256',
+        code_challenge: codeChallenge
+      });
+
+      window.location = 'https://accounts.spotify.com/authorize?' + args;
     }
 
     function disconnect() {
       sessionStorage.removeItem('spotify_token');
-      window.location.hash = '';
+      window.location.search = '';
       window.location.reload();
     }
 
-    function checkAuth() {
-      const hash = window.location.hash;
-      if (hash && hash.includes('access_token')) {
-        const params = new URLSearchParams(hash.substring(1));
-        accessToken = params.get('access_token');
-        sessionStorage.setItem('spotify_token', accessToken);
-        window.history.replaceState({}, document.title, window.location.pathname);
+    async function checkAuth() {
+      const urlParams = new URLSearchParams(window.location.search);
+      let code = urlParams.get('code');
+
+      if (code) {
+        const codeVerifier = localStorage.getItem('code_verifier');
+        const body = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: REDIRECT_URI,
+          client_id: CLIENT_ID,
+          code_verifier: codeVerifier
+        });
+
+        try {
+          const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body
+          });
+          const data = await res.json();
+          if (data.access_token) {
+            accessToken = data.access_token;
+            sessionStorage.setItem('spotify_token', accessToken);
+            // Limpa a URL para ficar bonita
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (e) {
+          console.error('Erro na autenticação:', e);
+        }
       } else {
         accessToken = sessionStorage.getItem('spotify_token');
       }
+
       updateUI();
       if (accessToken) startEngine();
     }
@@ -169,7 +222,7 @@
         const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        if (res.status === 204) return; // Nenhuma música tocando
+        if (res.status === 204) return;
         
         const data = await res.json();
         if (!data || !data.item) return;
@@ -186,7 +239,6 @@
           document.getElementById('track-art').style.backgroundImage = `url('${data.item.album.images[0].url}')`;
         }
 
-        // Regra dos 66%
         if (currentMode && ratio > 0.66 && lastTrackId !== data.item.id && !isThinking) {
           lastTrackId = data.item.id;
           triggerAI(trackName, artistName);
@@ -214,7 +266,6 @@
         const aiData = await aiRes.json();
         let textResponse = aiData.candidates[0].content.parts[0].text;
         
-        // Limpa formatação caso o Gemini seja teimoso
         textResponse = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
         const suggestions = JSON.parse(textResponse);
 
@@ -231,7 +282,6 @@
 
     async function queueSong(title, artist) {
       try {
-        // 1. Busca a música no Spotify
         const q = encodeURIComponent(`track:${title} artist:${artist}`);
         const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -241,7 +291,6 @@
 
         if (!trackUri) return log(`⚠️ Música não encontrada no Spotify: ${title}`);
 
-        // 2. Adiciona à fila
         const queueRes = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(trackUri)}`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -260,5 +309,6 @@
     // Inicialização
     window.onload = checkAuth;
   </script>
+
 </body>
 </html>
