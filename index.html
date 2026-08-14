@@ -311,14 +311,65 @@ class Component extends DCLogic {
       const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
         headers: { Authorization: 'Bearer ' + this.state.accessToken }
       });
-      if (!res.ok) return [];
+      if (!res.ok) return { history: [], recentNames: [] };
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : [];
       // Spotify returns newest first; reverse so "most recent" is last, like a timeline.
-      return items.reverse().map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name);
+      const reversed = items.reverse();
+      const recentNames = reversed.map(it => (it.track.artists[0] ? it.track.artists[0].name : '') + ' - ' + it.track.name);
+      return { history: reversed.map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name), recentNames };
+    } catch (e) {
+      return { history: [], recentNames: [] };
+    }
+  };
+
+  fetchAudioFeatures = async (trackId) => {
+    if (!trackId) return null;
+    try {
+      const res = await fetch('https://api.spotify.com/v1/audio-features/' + trackId, {
+        headers: { Authorization: 'Bearer ' + this.state.accessToken }
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (typeof data.tempo !== 'number') return null;
+      return { tempo: data.tempo, energy: data.energy, danceability: data.danceability };
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // ponytail: localStorage feedback log, no backend — good enough for a single-user app.
+  loadSuggestionLog = () => {
+    try {
+      return JSON.parse(localStorage.getItem('nocturne_suggestions') || '[]');
     } catch (e) {
       return [];
     }
+  };
+
+  saveSuggestionLog = (log) => {
+    localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-30)));
+  };
+
+  recordSuggestion = (title, artist) => {
+    const log = this.loadSuggestionLog();
+    log.push({ title, artist, queuedAt: Date.now() });
+    this.saveSuggestionLog(log);
+  };
+
+  getFeedbackSummary = (recentNames) => {
+    const log = this.loadSuggestionLog();
+    const STALE_MS = 30 * 60 * 1000; // if it's been 30min+ and never showed up in recently-played, count as skipped
+    const liked = [];
+    const skipped = [];
+    for (const entry of log) {
+      const label = entry.artist + ' - ' + entry.title;
+      const seen = recentNames.some(n => n.toLowerCase() === label.toLowerCase());
+      if (seen) liked.push(label);
+      else if (Date.now() - entry.queuedAt > STALE_MS) skipped.push(label);
+    }
+    const uniq = (arr) => Array.from(new Set(arr)).slice(-5);
+    return { liked: uniq(liked), skipped: uniq(skipped) };
   };
 
   fetchTopGenres = async () => {
@@ -346,13 +397,18 @@ class Component extends DCLogic {
       this.addLog('> My Turn: ' + customPrompt);
     }
     const mode = MODES[this.state.activeMode] || MODES.default;
-    const [genres, history, topGenres] = await Promise.all([
+    const [genres, historyData, topGenres, audioFeatures] = await Promise.all([
       track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
       this.fetchRecentHistory(),
-      this.fetchTopGenres()
+      this.fetchTopGenres(),
+      track ? this.fetchAudioFeatures(track.id) : Promise.resolve(null)
     ]);
+    const { history, recentNames } = historyData;
+    const feedback = this.getFeedbackSummary(recentNames);
     if (genres.length) this.addLog('> Confirmed Spotify genres: ' + genres.join(', '));
     if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
+    if (audioFeatures) this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM, energy ' + audioFeatures.energy.toFixed(2));
+    if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
     try {
       const groqRes = await fetch('/api/groq', {
         method: 'POST',
@@ -363,6 +419,8 @@ class Component extends DCLogic {
           genres,
           history,
           topGenres,
+          audioFeatures,
+          feedback,
           mode: mode.label + ': ' + mode.vibe,
           customPrompt: customPrompt || ''
         })
@@ -425,6 +483,7 @@ class Component extends DCLogic {
       });
       if (queueRes.ok || queueRes.status === 204) {
         this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (reason ? ' — ' + reason : ''));
+        this.recordSuggestion(found.name, found.artists[0] ? found.artists[0].name : '');
         return true;
       }
       if (queueRes.status === 404) {
