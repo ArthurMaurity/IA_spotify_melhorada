@@ -432,7 +432,7 @@ class Component extends DCLogic {
         return;
       }
       const groqData = await groqRes.json();
-      const candidates = (groqData.tracks || []).slice(0, 6);
+      const candidates = (groqData.tracks || []).slice(0, 12);
       if (!candidates.length) {
         this.addLog('> AI returned no suggestions.');
         this.setState({ isThinking: false });
@@ -442,12 +442,15 @@ class Component extends DCLogic {
       let queuedCount = 0;
       for (const sug of candidates) {
         if (queuedCount >= TARGET_QUEUED) break;
-        const found = await this.resolveOnSpotify(sug.title, sug.artist);
-        if (!found) {
-          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on Spotify — skipping (likely hallucinated).');
+        const resolved = await this.resolveOnSpotify(sug.title, sug.artist);
+        if (!resolved) {
+          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on Spotify, and no tracks found for that artist — skipping.');
           continue;
         }
-        const ok = await this.queueTrack(found, sug.why);
+        if (resolved.fellBack) {
+          this.addLog('> "' + sug.title + '" appears hallucinated — falling back to top track by ' + sug.artist + '.');
+        }
+        const ok = await this.queueTrack(resolved.track, sug.why);
         if (ok) queuedCount++;
       }
       if (queuedCount === 0) {
@@ -459,19 +462,30 @@ class Component extends DCLogic {
     this.setState({ isThinking: false });
   };
 
-  resolveOnSpotify = async (title, artist) => {
+  searchSpotify = async (query, limit) => {
     const token = this.state.accessToken;
     try {
-      const q = encodeURIComponent('track:' + title + ' artist:' + artist);
-      const searchRes = await fetch('https://api.spotify.com/v1/search?q=' + q + '&type=track&limit=1', {
+      const res = await fetch('https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=track&limit=' + limit, {
         headers: { Authorization: 'Bearer ' + token }
       });
-      if (!searchRes.ok) return null;
-      const searchData = await searchRes.json();
-      return (searchData.tracks && searchData.tracks.items && searchData.tracks.items[0]) || null;
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.tracks && data.tracks.items) || [];
     } catch (e) {
-      return null;
+      return [];
     }
+  };
+
+  // Returns { track, fellBack } — fellBack means the AI's exact title didn't
+  // exist, so we queued the artist's most popular real track instead.
+  resolveOnSpotify = async (title, artist) => {
+    const exact = await this.searchSpotify('track:' + title + ' artist:' + artist, 1);
+    if (exact[0]) return { track: exact[0], fellBack: false };
+
+    const byArtist = await this.searchSpotify('artist:"' + artist + '"', 5);
+    if (!byArtist.length) return null;
+    const top = byArtist.reduce((a, b) => ((b.popularity || 0) > (a.popularity || 0) ? b : a));
+    return { track: top, fellBack: true };
   };
 
   queueTrack = async (found, reason) => {

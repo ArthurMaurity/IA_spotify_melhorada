@@ -21,7 +21,7 @@ const SYSTEM_PROMPT = [
   'MAINSTREAM HIT PRIORITY (mandatory): when dealing with regional, non-English, or specific genres like pagode or samba, strictly suggest the artist\'s most famous, undisputed Top 10 hits. Do not attempt to find deep cuts, rare tracks, or live versions. Absolute factual accuracy of the Artist + Song pairing is your highest priority.',
   'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks, and never guess a plausible-sounding title you are not confident is a real released song — if you are unsure a specific song exists, pick a different, well-known song by an artist in the same confirmed genre that you are certain is real.',
   'Never repeat the current artist or song.',
-  'Rank your suggestions from most to least confident that they are real. Provide between 4 and 6 tracks — a downstream Spotify lookup will discard any that turn out not to exist, so lean toward 6 real candidates when you can.',
+  'Rank your suggestions from most to least confident that they are real. Provide between 10 and 12 tracks — a downstream Spotify lookup will discard any that turn out not to exist, so lean toward 12 real candidates when you can.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
   '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the exact shared subgenre or production trait, per SUBGENRE LOCK"}]}',
 ].join(' ');
@@ -57,7 +57,7 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatu
   if (customPrompt) {
     parts.push(`LISTENER'S EXPLICIT INSTRUCTION (top priority — see TOP PRIORITY OVERRIDE rule): "${customPrompt}". If this names a concrete genre/style, honour it exactly and directly rather than blending it with the current track's style.`);
   }
-  parts.push('Suggest 4 to 6 songs that fit.');
+  parts.push('Suggest 10 to 12 songs that fit.');
   return parts.join(' ');
 }
 
@@ -127,7 +127,7 @@ module.exports = async function handler(req, res) {
 
     const tracks = parsed.tracks
       .filter((t) => t && t.title && t.artist)
-      .slice(0, 6)
+      .slice(0, 12)
       .map((t) => ({
         title: String(t.title).trim(),
         artist: String(t.artist).trim(),
