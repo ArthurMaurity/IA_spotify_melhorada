@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -119,6 +119,29 @@ const MODES = {
   gaming: { label: 'Gaming Mode', vibe: 'high-energy, mostly instrumental or electronic tracks with a driving rhythm, good for focus during gameplay' },
   study: { label: 'Work & Study', vibe: 'low-lyric, ambient or lo-fi focus music that stays unobtrusive' }
 };
+
+// "Matuê, Teto" -> ['matue', 'teto']. Strips accents/punctuation so the
+// comparison survives the LLM spelling names without diacritics.
+function normalizeArtist(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9 ]/gi, '')
+    .trim()
+    .toLowerCase();
+}
+
+function splitArtists(input) {
+  const str = Array.isArray(input) ? input.join(', ') : String(input || '');
+  return str
+    .split(/,|&|\bfeat\.?\b|\bft\.?\b/i)
+    .map(normalizeArtist)
+    .filter(Boolean);
+}
+
+function sharesArtist(a, b) {
+  return a.some(x => b.includes(x));
+}
 
 class Component extends DCLogic {
   state = {
@@ -440,11 +463,23 @@ class Component extends DCLogic {
       }
       const TARGET_QUEUED = 3;
       let queuedCount = 0;
+      // Hard guard: the LLM sometimes ignores the no-repeat rule, and the artist
+      // fallback would then resolve it into the currently playing artist.
+      const currentArtists = splitArtists(track ? track.artists : '');
       for (const sug of candidates) {
         if (queuedCount >= TARGET_QUEUED) break;
+        if (sharesArtist(splitArtists(sug.artist), currentArtists)) {
+          this.addLog('> Skipping "' + sug.title + '" — ' + sug.artist + ' is the currently playing artist.');
+          continue;
+        }
         const resolved = await this.resolveOnSpotify(sug.title, sug.artist);
         if (!resolved) {
           this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on Spotify, and no tracks found for that artist — skipping.');
+          continue;
+        }
+        const resolvedArtists = splitArtists(resolved.track.artists.map(a => a.name));
+        if (sharesArtist(resolvedArtists, currentArtists)) {
+          this.addLog('> Skipping "' + resolved.track.name + '" — resolved to the currently playing artist.');
           continue;
         }
         if (resolved.fellBack) {
