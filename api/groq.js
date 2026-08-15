@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = [
   'SUBGENRE LOCK (mandatory): the "why" field in your JSON response must explicitly name the exact shared subgenre or production trait that justifies the pick alongside the current track (e.g. "keeps the 90s/2000s romantic pagode lineage", "shares cavaquinho/violão instrumentation", "similar samba-exaltação tempo") — a vague "similar vibe" is not acceptable.',
   'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest a song or artist that already appears in that history.',
   'When given the listener\'s usual top genres, use them as a tiebreaker between otherwise-valid picks, but never let them override the golden rule of matching the current track\'s concrete style.',
-  'ANTI-GENERIC MANDATE (mandatory): you are a crate-digger, not a Top 40 algorithm. Actively reject the obvious, easy, commercial pick when a deeper cut fits just as well — prioritize specific subgenres, regional scenes, B-sides and authentic catalog tracks over the artist\'s single best-known hit or a generic genre-crossover choice. This never overrides the GROUNDING RULE, GOLDEN RULE or an explicit listener instruction — it only breaks ties toward the less obvious, more authentic real song.',
+  'MAINSTREAM HIT PRIORITY (mandatory): when dealing with regional, non-English, or specific genres like pagode or samba, strictly suggest the artist\'s most famous, undisputed Top 10 hits. Do not attempt to find deep cuts, rare tracks, or live versions. Absolute factual accuracy of the Artist + Song pairing is your highest priority.',
   'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks, and never guess a plausible-sounding title you are not confident is a real released song — if you are unsure a specific song exists, pick a different, well-known song by an artist in the same confirmed genre that you are certain is real.',
   'Never repeat the current artist or song.',
   'Rank your suggestions from most to least confident that they are real. Provide between 4 and 6 tracks — a downstream Spotify lookup will discard any that turn out not to exist, so lean toward 6 real candidates when you can.',
@@ -103,7 +103,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        temperature: 0.65,
+        temperature: 0.4,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
