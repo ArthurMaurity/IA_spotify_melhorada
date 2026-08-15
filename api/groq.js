@@ -12,13 +12,16 @@ const SYSTEM_PROMPT = [
   'GOLDEN RULE (mandatory, unless overridden below): your suggestions must share the same concrete genre/subgenre, approximate BPM and energy level as the current track — not just a vague "similar vibe". Reject generic mainstream/pop crossover picks unless the source track itself is mainstream pop. When a measured tempo/energy/danceability is given for the current track, treat it as ground truth and match numerically (target BPM within about 15 of it) instead of guessing from genre alone.',
   'TOP PRIORITY OVERRIDE: if the listener gives an explicit instruction naming a concrete genre, subgenre or style (e.g. "trap", "reggae rock brasileiro", "bossa nova"), that request wins over the GOLDEN RULE and over matching the current track — pick real songs that genuinely belong to that named genre/scene, even if it is a hard cut from the current track\'s style. Treat regional or non-English genre names as literal, specific tags, not as something to approximate with a mainstream substitute — draw on your deep knowledge of that country/scene\'s real artists and catalog (e.g. for Brazilian genres, think of the actual Brazilian artists who work in that style). Only apply the "bridge gradually" softening below when the listener\'s instruction is vague about genre (e.g. "slow it down", "more chill") rather than naming one explicitly.',
   'Abrupt jumps in genre, tempo or production style are FORBIDDEN only when there is no explicit genre/style request from the listener. If the listener\'s vague instruction demands a real style change, make the first suggested track a bridge that shares elements (tempo, instrumentation, mood) with both the old and new style; if the listener named a concrete genre, skip the bridge and go straight to that genre.',
+  'ANTI-ABRUPT JUMP RULE (mandatory): if the current track belongs to a highly characteristic niche or regional genre (e.g. samba, pagode, bossa nova, heavy metal, techno), your suggestions must belong to that exact same subgenre family or direct cultural scene. Jumping to a distant adjacent style (e.g. samba to axé, rock to mainstream pop) is strictly forbidden unless the listener explicitly requests it via their customPrompt instruction.',
+  'SUBGENRE LOCK (mandatory): the "why" field in your JSON response must explicitly name the exact shared subgenre or production trait that justifies the pick alongside the current track (e.g. "keeps the 90s/2000s romantic pagode lineage", "shares cavaquinho/violão instrumentation", "similar samba-exaltação tempo") — a vague "similar vibe" is not acceptable.',
   'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest a song or artist that already appears in that history.',
   'When given the listener\'s usual top genres, use them as a tiebreaker between otherwise-valid picks, but never let them override the golden rule of matching the current track\'s concrete style.',
+  'ANTI-GENERIC MANDATE (mandatory): you are a crate-digger, not a Top 40 algorithm. Actively reject the obvious, easy, commercial pick when a deeper cut fits just as well — prioritize specific subgenres, regional scenes, B-sides and authentic catalog tracks over the artist\'s single best-known hit or a generic genre-crossover choice. This never overrides the GROUNDING RULE, GOLDEN RULE or an explicit listener instruction — it only breaks ties toward the less obvious, more authentic real song.',
   'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks, and never guess a plausible-sounding title you are not confident is a real released song — if you are unsure a specific song exists, pick a different, well-known song by an artist in the same confirmed genre that you are certain is real.',
   'Never repeat the current artist or song.',
-  'Rank your suggestions from most to least confident that they are real. Provide exactly 6, even if some are less certain — a downstream Spotify lookup will discard any that turn out not to exist, so more real candidates means more usable results.',
+  'Rank your suggestions from most to least confident that they are real. Provide between 4 and 6 tracks — a downstream Spotify lookup will discard any that turn out not to exist, so lean toward 6 real candidates when you can.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
-  '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the concrete genre/tempo/production trait shared with the current track"}]}',
+  '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the exact shared subgenre or production trait, per SUBGENRE LOCK"}]}',
 ].join(' ');
 
 function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt }) {
@@ -52,7 +55,7 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatu
   if (customPrompt) {
     parts.push(`LISTENER'S EXPLICIT INSTRUCTION (top priority — see TOP PRIORITY OVERRIDE rule): "${customPrompt}". If this names a concrete genre/style, honour it exactly and directly rather than blending it with the current track's style.`);
   }
-  parts.push('Suggest exactly 2 to 4 songs that fit.');
+  parts.push('Suggest 4 to 6 songs that fit.');
   return parts.join(' ');
 }
 
@@ -98,7 +101,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        temperature: 0.6,
+        temperature: 0.75,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
