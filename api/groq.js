@@ -16,15 +16,16 @@ let cachedModelId = null;
 const PREFERRED_TAGS = ['versatile', 'instruct', 'chat'];
 
 function pickChatModel(models) {
-  // 'guard' models (e.g. llama-prompt-guard-2-86m) are tiny safety classifiers,
-  // not conversational LLMs — they choke on our full DJ prompt with a context
-  // length error, so they must never be picked as the chat model.
+  // 'guard' models (e.g. meta-llama/llama-prompt-guard-2-22m/86m) are tiny
+  // safety/moderation classifiers, not conversational LLMs — they don't
+  // support json_object response_format and choke on our full DJ prompt, so
+  // they must never be picked as the chat model, regardless of vendor prefix.
   const candidates = models.filter((m) => {
     const id = String(m.id || '').toLowerCase();
-    return (id.includes('llama') || id.includes('mixtral'))
-      && !id.includes('vision')
-      && !id.includes('tool')
-      && !id.includes('guard');
+    if (id.includes('guard')) return false;
+    if (id.includes('vision')) return false;
+    if (id.includes('tool')) return false;
+    return id.includes('llama') || id.includes('mixtral');
   });
   candidates.sort((a, b) => {
     const windowDiff = (b.context_window || 0) - (a.context_window || 0);
@@ -51,7 +52,19 @@ async function discoverModel(apiKey) {
   return modelId;
 }
 
+function isBannedModel(id) {
+  const lower = String(id || '').toLowerCase();
+  return lower.includes('guard') || lower.includes('vision') || lower.includes('tool');
+}
+
 async function getActiveModel(apiKey, forceRefresh) {
+  // Defensive: a warm process may still be holding a cached value picked by an
+  // older, buggier filter (e.g. a guard model). Never trust a banned cached ID —
+  // invalidate it immediately and force a fresh discovery instead of reusing it.
+  if (cachedModelId && isBannedModel(cachedModelId)) {
+    console.warn(`Invalidating banned cached model: ${cachedModelId}`);
+    cachedModelId = null;
+  }
   if (!cachedModelId || forceRefresh) {
     cachedModelId = await discoverModel(apiKey);
     console.warn(`Discovered active Groq model: ${cachedModelId}`);
