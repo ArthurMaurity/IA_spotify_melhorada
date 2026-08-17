@@ -118,7 +118,13 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatu
     parts.push('No confirmed genre data available — use your own knowledge of this specific real artist and song.');
   }
   if (audioFeatures && typeof audioFeatures.tempo === 'number') {
-    parts.push(`Current track measured tempo ~${Math.round(audioFeatures.tempo)} BPM, energy ${audioFeatures.energy.toFixed(2)}, danceability ${audioFeatures.danceability.toFixed(2)} (0-1 scale, Spotify's own analysis — this is ground truth, not a guess).`);
+    // Not every provider can supply energy/danceability alongside tempo (e.g.
+    // a future non-Spotify provider) -- only mention the fields that are
+    // actually present instead of assuming the full Spotify audio-features shape.
+    const bits = [`tempo ~${Math.round(audioFeatures.tempo)} BPM`];
+    if (typeof audioFeatures.energy === 'number') bits.push(`energy ${audioFeatures.energy.toFixed(2)}`);
+    if (typeof audioFeatures.danceability === 'number') bits.push(`danceability ${audioFeatures.danceability.toFixed(2)}`);
+    parts.push(`Current track measured ${bits.join(', ')} (0-1 scale where applicable — this is ground truth, not a guess).`);
   }
   if (Array.isArray(history) && history.length) {
     parts.push(`Listener's recent history, oldest to newest (last one is most recent): ${history.join(' | ')}.`);

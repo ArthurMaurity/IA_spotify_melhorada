@@ -28,7 +28,8 @@ build step, no bundler for the app itself.
    - `GET /v1/me/player/recently-played` → last 5 tracks, as a timeline
    - `GET /v1/me/top/artists` → your overall top genres (tiebreaker only)
 3. All of that plus the track name/artist and selected mode/instruction goes
-   to `POST /api/groq`, which asks Groq (`llama-3.3-70b-versatile`) for 6
+   to `POST /api/groq`, which discovers a currently-live Groq chat model at
+   request time (never hardcoded — see `api/groq.js`) and asks it for 10-12
    ranked candidate songs, grounded in the real genre data rather than the
    model's own guess.
 4. The browser resolves each candidate against `GET /v1/search` and queues
@@ -46,14 +47,18 @@ Needs a `.env` (gitignored) with:
 
 ```
 GROQ_API_KEY=gsk_...
-VITE_SPOTIFY_CLIENT_ID=<your Spotify app's Client ID>
 ```
+
+The Spotify Client ID is **not** read from an env var — there's no build step
+that could substitute one into a static HTML file. It's hardcoded as the
+`CLIENT_ID` constant near the top of `index.html`'s script block; edit it
+there if you swap in your own Spotify app.
 
 ## Deploying
 
 1. Import the repo at <https://vercel.com/new>. Framework Preset: **Other**.
-2. Add the same two env vars in Project Settings → Environment Variables —
-   `.env` is local-only and never gets deployed.
+2. Add `GROQ_API_KEY` in Project Settings → Environment Variables — `.env` is
+   local-only and never gets deployed.
 3. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard),
    under your app's Settings → Redirect URIs, add the deployed URL exactly as
    the browser will send it: `https://<your-domain>/` (HTTPS, trailing slash).
@@ -71,6 +76,10 @@ VITE_SPOTIFY_CLIENT_ID=<your Spotify app's Client ID>
   Disconnect then Connect to Spotify again to re-consent.
 - Tokens live in `sessionStorage`, not `localStorage` — closing the tab ends
   the session.
+- The access token (~1h lifetime) is refreshed silently in the background
+  using the stored refresh token, proactively before it expires and
+  reactively on a stray 401 — an open tab survives an overnight DJ session
+  without needing to reconnect.
 - Requires an **active playback device**: start playing something in the
   Spotify app first, otherwise queue writes have nowhere to go.
 

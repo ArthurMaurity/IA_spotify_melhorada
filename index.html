@@ -187,19 +187,15 @@ const MUSIC_PROVIDERS = {
       }
     },
 
+    // Spotify locked /v1/audio-features down for apps created after Nov 2024
+    // (403 for virtually everyone). We used to call it anyway and eat the
+    // failure silently -- a wasted round trip on every single triggerDJ call,
+    // and a straight contradiction of the "never relies on it" line in the
+    // docs. Kept as a stub (rather than deleted) so the MusicProvider
+    // interface stays uniform across providers and this can come back to life
+    // if Spotify ever reopens the endpoint.
     async getAudioFeatures(token, trackId) {
-      if (!trackId) return null;
-      try {
-        const res = await fetch('https://api.spotify.com/v1/audio-features/' + trackId, {
-          headers: { Authorization: 'Bearer ' + token }
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (typeof data.tempo !== 'number') return null;
-        return { tempo: data.tempo, energy: data.energy, danceability: data.danceability };
-      } catch (e) {
-        return null;
-      }
+      return null;
     },
 
     async getArtistGenres(token, artistId) {
@@ -403,6 +399,48 @@ class Component extends DCLogic {
     }
   }
 
+  // Uses the stored refresh_token to silently mint a new access token without
+  // sending the user through the PKCE redirect again. Spotify access tokens
+  // expire after ~1h (expires_in), which used to force a full reconnect mid
+  // DJ session -- exactly the overnight use case this app is built for.
+  refreshAccessToken = async () => {
+    const provider = this.activeProvider;
+    const refreshToken = sessionStorage.getItem(this.storageKey('refresh_token'));
+    if (!refreshToken) return false;
+    try {
+      const tokenRes = await fetch(provider.tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: provider.clientId
+        })
+      });
+      if (!tokenRes.ok) return false;
+      const tokenData = await tokenRes.json();
+      sessionStorage.setItem(this.storageKey('access_token'), tokenData.access_token);
+      sessionStorage.setItem(this.storageKey('token_expiry'), String(Date.now() + (tokenData.expires_in || 3600) * 1000));
+      // Spotify doesn't always rotate the refresh token on renewal -- only overwrite ours if a new one comes back.
+      if (tokenData.refresh_token) sessionStorage.setItem(this.storageKey('refresh_token'), tokenData.refresh_token);
+      this.setState({ accessToken: tokenData.access_token });
+      return true;
+    } catch (e) {
+      this.addLog('> ' + provider.label + ' token refresh error: ' + e.message);
+      return false;
+    }
+  };
+
+  // Called before any authenticated request. Refreshes proactively when the
+  // access token is close to expiry so we very rarely hit an actual 401.
+  ensureFreshToken = async () => {
+    const expiry = parseInt(sessionStorage.getItem(this.storageKey('token_expiry')) || '0', 10);
+    if (expiry && Date.now() > expiry - 60000) {
+      return this.refreshAccessToken();
+    }
+    return true;
+  };
+
   selectProvider = (e) => {
     const id = e.target.value;
     const provider = MUSIC_PROVIDERS[id] || MUSIC_PROVIDERS.spotify;
@@ -454,12 +492,22 @@ class Component extends DCLogic {
   }
 
   pollTick = async () => {
+    if (!this.state.accessToken) return;
+    await this.ensureFreshToken();
     const token = this.state.accessToken;
     if (!token) return;
     const provider = this.activeProvider;
     try {
       const result = await provider.getCurrentlyPlaying(token);
-      if (result.status === 'expired') { this.handleAuthExpired(); return; }
+      if (result.status === 'expired') {
+        // Reactive fallback: the proactive refresh above should catch this in
+        // the common case, but if the token was revoked or our expiry clock
+        // drifted, try one more silent refresh before forcing a full reconnect.
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) return;
+        this.handleAuthExpired();
+        return;
+      }
       if (result.status === 'error') { this.addLog('> ' + provider.label + ' poll failed (' + result.code + ')'); return; }
       if (result.status === 'empty') { this.setState({ track: null }); return; }
       const track = result.track;
@@ -551,7 +599,10 @@ class Component extends DCLogic {
     const feedback = this.getFeedbackSummary(recentNames);
     if (genres.length) this.addLog('> Confirmed ' + provider.label + ' genres: ' + genres.join(', '));
     if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
-    if (audioFeatures) this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM, energy ' + audioFeatures.energy.toFixed(2));
+    if (audioFeatures && typeof audioFeatures.tempo === 'number') {
+      const energyStr = typeof audioFeatures.energy === 'number' ? ', energy ' + audioFeatures.energy.toFixed(2) : '';
+      this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM' + energyStr);
+    }
     if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
     try {
       const groqRes = await fetch('/api/groq', {
