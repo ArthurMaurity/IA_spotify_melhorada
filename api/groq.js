@@ -3,8 +3,16 @@
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 // 70b has far deeper knowledge of specific artists/subgenres than the 8b-instant
-// tier, which tended to fall back to generic mainstream picks.
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// tier, which tended to fall back to generic mainstream picks. Groq periodically
+// retires models, so we try a chain of candidates and fall back automatically
+// instead of hard-failing with a 404 whenever the primary model is deprecated.
+const GROQ_MODELS = [
+  process.env.GROQ_MODEL,
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
+  'llama3-8b-8192',
+  'mixtral-8x7b-32768',
+].filter(Boolean);
 
 const SYSTEM_PROMPT = [
   'You are an expert DJ specialized in seamless transitions, with deep knowledge of genres, subgenres, tempo (BPM) and production style across music history.',
@@ -83,6 +91,52 @@ function extractJson(text) {
   }
 }
 
+async function callGroqWithFallback(apiKey, messages) {
+  let lastError = null;
+
+  for (const model of GROQ_MODELS) {
+    let groqRes;
+    try {
+      groqRes = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.4,
+          response_format: { type: 'json_object' },
+          messages,
+        }),
+      });
+    } catch (err) {
+      // Network-level failure (timeout, DNS, etc.) — not a model problem, surface it immediately.
+      throw err;
+    }
+
+    if (groqRes.ok) {
+      return groqRes.json();
+    }
+
+    const errText = await groqRes.text();
+    const isInvalidModel = groqRes.status === 404 || /does not exist/i.test(errText);
+
+    if (isInvalidModel) {
+      console.warn(`Model ${model} failed, trying next...`);
+      lastError = new Error(`Groq request failed for model ${model}: ${errText}`);
+      continue;
+    }
+
+    // Any other error (auth, rate limit, bad request, etc.) is a real problem — don't mask it.
+    const err = new Error(`Groq request failed: ${errText}`);
+    err.status = groqRes.status;
+    throw err;
+  }
+
+  throw lastError || new Error('Groq request failed: no models available');
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -97,29 +151,11 @@ module.exports = async function handler(req, res) {
   const { track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt } = req.body || {};
 
   try {
-    const groqRes = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0.4,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt }) },
-        ],
-      }),
-    });
+    const data = await callGroqWithFallback(apiKey, [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt }) },
+    ]);
 
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      return res.status(groqRes.status).json({ error: `Groq request failed: ${errText}` });
-    }
-
-    const data = await groqRes.json();
     const rawText = data?.choices?.[0]?.message?.content || '';
     const parsed = extractJson(rawText);
 
@@ -138,6 +174,6 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({ tracks });
   } catch (err) {
-    return res.status(500).json({ error: `Unexpected error: ${err.message}` });
+    return res.status(err.status || 500).json({ error: err.message || 'Unexpected error' });
   }
 };
