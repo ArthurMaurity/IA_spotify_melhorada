@@ -39,7 +39,7 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="10" x2="4" y2="14"></line><line x1="9" y1="6" x2="9" y2="18"></line><line x1="14" y1="3" x2="14" y2="21"></line><line x1="19" y1="8" x2="19" y2="16"></line></svg>
         Nocturne DJ
       </span>
-      <span class="tag tag-outline" style="margin-left:auto">Connected</span>
+      <span class="tag tag-outline" style="margin-left:auto">{{ connectedProviderLabel }}</span>
       <button type="button" class="btn btn-ghost" onClick="{{ disconnect }}">Disconnect</button>
     </nav>
 
@@ -58,7 +58,7 @@
           </div>
         </sc-if>
         <sc-if value="{{ noTrack }}" hint-placeholder-val="{{ true }}">
-          <div class="card-body" style="opacity:.65">Nothing playing on Spotify right now.</div>
+          <div class="card-body" style="opacity:.65">{{ noTrackText }}</div>
         </sc-if>
       </div>
 
@@ -104,9 +104,20 @@
       <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-300)" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="15"></line><line x1="9" y1="4" x2="9" y2="20"></line><line x1="14" y1="2" x2="14" y2="22"></line><line x1="19" y1="7" x2="19" y2="17"></line></svg>
       <div>
         <div style="font-family:var(--font-heading);font-weight:500;font-size:32px;margin-bottom:var(--space-2);">Nocturne DJ</div>
-        <p style="max-width:440px;color:var(--color-neutral-300);margin:0 auto;">An AI co-pilot for your Spotify queue. Connect your account and it listens for the right moment to line up what's next.</p>
+        <p style="max-width:440px;color:var(--color-neutral-300);margin:0 auto;">An AI co-pilot for your music queue. Connect your account and it listens for the right moment to line up what's next.</p>
       </div>
-      <button type="button" class="btn btn-primary" onClick="{{ connectSpotify }}">Connect to Spotify</button>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2);">
+        <div class="card-kicker">Music provider</div>
+        <select class="input" value="{{ selectedProvider }}" onChange="{{ selectProvider }}" style="min-width:220px;">
+          <sc-for list="{{ providerOptions }}" as="p" hint-placeholder-count="3">
+            <option value="{{ p.id }}">{{ p.label }}</option>
+          </sc-for>
+        </select>
+        <sc-if value="{{ hasProviderNotice }}" hint-placeholder-val="{{ false }}">
+          <p class="card-body" style="margin:0;max-width:360px;color:var(--color-neutral-400);font-size:12px;">{{ providerNotice }}</p>
+        </sc-if>
+      </div>
+      <button type="button" class="btn btn-primary" onClick="{{ connectProvider }}">{{ connectLabel }}</button>
     </div>
   </sc-if>
 
@@ -118,6 +129,154 @@ const MODES = {
   default: { label: 'Default Flow', vibe: 'a natural continuation of the current energy and genre' },
   gaming: { label: 'Gaming Mode', vibe: 'high-energy, mostly instrumental or electronic tracks with a driving rhythm, good for focus during gameplay' },
   study: { label: 'Work & Study', vibe: 'low-lyric, ambient or lo-fi focus music that stays unobtrusive' }
+};
+
+// MusicProvider interface: { id, label, implemented, clientId, authEndpoint,
+// tokenEndpoint, scopes, getCurrentlyPlaying, getRecentlyPlayed,
+// getAudioFeatures, getArtistGenres, getTopGenres, searchTrack, resolveTrack,
+// queueTrack(token, track) -> { ok, reason?, status?, message? } }.
+// Unimplemented providers only need { id, label, implemented: false } — the
+// UI gates on `implemented` before ever touching the rest of the interface.
+const MUSIC_PROVIDERS = {
+  spotify: {
+    id: 'spotify',
+    label: 'Spotify',
+    implemented: true,
+    clientId: CLIENT_ID,
+    authEndpoint: 'https://accounts.spotify.com/authorize',
+    tokenEndpoint: 'https://accounts.spotify.com/api/token',
+    scopes: ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state', 'user-read-recently-played', 'user-top-read'],
+
+    async getCurrentlyPlaying(token) {
+      const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (res.status === 204) return { status: 'empty' };
+      if (res.status === 401) return { status: 'expired' };
+      if (!res.ok) return { status: 'error', code: res.status };
+      const data = await res.json();
+      if (!data || !data.item) return { status: 'empty' };
+      return {
+        status: 'ok',
+        track: {
+          id: data.item.id,
+          name: data.item.name,
+          artists: data.item.artists.map(a => a.name).join(', '),
+          artistId: data.item.artists[0] ? data.item.artists[0].id : '',
+          albumArt: data.item.album.images[0] ? data.item.album.images[0].url : '',
+          progressMs: data.progress_ms || 0,
+          durationMs: data.item.duration_ms || 1
+        }
+      };
+    },
+
+    async getRecentlyPlayed(token) {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return { history: [], recentNames: [] };
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        // Spotify returns newest first; reverse so "most recent" is last, like a timeline.
+        const reversed = items.reverse();
+        const recentNames = reversed.map(it => (it.track.artists[0] ? it.track.artists[0].name : '') + ' - ' + it.track.name);
+        return { history: reversed.map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name), recentNames };
+      } catch (e) {
+        return { history: [], recentNames: [] };
+      }
+    },
+
+    async getAudioFeatures(token, trackId) {
+      if (!trackId) return null;
+      try {
+        const res = await fetch('https://api.spotify.com/v1/audio-features/' + trackId, {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (typeof data.tempo !== 'number') return null;
+        return { tempo: data.tempo, energy: data.energy, danceability: data.danceability };
+      } catch (e) {
+        return null;
+      }
+    },
+
+    async getArtistGenres(token, artistId) {
+      if (!artistId) return [];
+      try {
+        const res = await fetch('https://api.spotify.com/v1/artists/' + artistId, {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data.genres) ? data.genres : [];
+      } catch (e) {
+        return [];
+      }
+    },
+
+    async getTopGenres(token) {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=15', {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        const counts = {};
+        for (const artist of (data.items || [])) {
+          for (const g of (artist.genres || [])) counts[g] = (counts[g] || 0) + 1;
+        }
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 8);
+      } catch (e) {
+        return [];
+      }
+    },
+
+    async searchTrack(token, query, limit) {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=track&limit=' + limit, {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.tracks && data.tracks.items) || [];
+      } catch (e) {
+        return [];
+      }
+    },
+
+    // Returns { track, fellBack } — fellBack means the AI's exact title didn't
+    // exist, so we queued the artist's most popular real track instead.
+    async resolveTrack(token, title, artist) {
+      const exact = await this.searchTrack(token, 'track:' + title + ' artist:' + artist, 1);
+      if (exact[0]) return { track: exact[0], fellBack: false };
+
+      const byArtist = await this.searchTrack(token, 'artist:"' + artist + '"', 5);
+      if (!byArtist.length) return null;
+      const top = byArtist.reduce((a, b) => ((b.popularity || 0) > (a.popularity || 0) ? b : a));
+      return { track: top, fellBack: true };
+    },
+
+    async queueTrack(token, track) {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/queue?uri=' + encodeURIComponent(track.uri), {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (res.ok || res.status === 204) return { ok: true };
+        if (res.status === 404) return { ok: false, reason: 'no_device' };
+        return { ok: false, reason: 'error', status: res.status };
+      } catch (e) {
+        return { ok: false, reason: 'error', message: e.message };
+      }
+    }
+  },
+
+  // Placeholders for the multi-platform expansion — the UI already lets the
+  // listener pick these; wiring up the real APIs is future work.
+  youtube: { id: 'youtube', label: 'YouTube Music', implemented: false },
+  apple: { id: 'apple', label: 'Apple Music', implemented: false }
 };
 
 // "Matuê, Teto" -> ['matue', 'teto']. Strips accents/punctuation so the
@@ -145,6 +304,8 @@ function sharesArtist(a, b) {
 
 class Component extends DCLogic {
   state = {
+    provider: localStorage.getItem('nocturne_provider') || 'spotify',
+    providerNotice: '',
     accessToken: null,
     track: null,
     activeMode: null,
@@ -155,6 +316,14 @@ class Component extends DCLogic {
 
   pollInterval = null;
   lastTriggeredId = null;
+
+  get activeProvider() {
+    return MUSIC_PROVIDERS[this.state.provider] || MUSIC_PROVIDERS.spotify;
+  }
+
+  // Namespaces session storage per provider (e.g. 'spotify_access_token') so
+  // switching providers later can't clobber another provider's saved session.
+  storageKey = (suffix) => this.state.provider + '_' + suffix;
 
   componentDidMount() {
     this.restoreSession();
@@ -192,56 +361,72 @@ class Component extends DCLogic {
   };
 
   async restoreSession() {
+    const provider = this.activeProvider;
+    if (!provider.implemented) return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (code) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      const verifier = sessionStorage.getItem('spotify_code_verifier') || '';
+      const verifier = sessionStorage.getItem(this.storageKey('code_verifier')) || '';
       try {
-        const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+        const tokenRes = await fetch(provider.tokenEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
             grant_type: 'authorization_code',
             code,
             redirect_uri: window.location.origin + window.location.pathname,
-            client_id: CLIENT_ID,
+            client_id: provider.clientId,
             code_verifier: verifier
           })
         });
         if (!tokenRes.ok) {
-          this.addLog('> Spotify token exchange failed (' + tokenRes.status + ').');
+          this.addLog('> ' + provider.label + ' token exchange failed (' + tokenRes.status + ').');
           return;
         }
         const tokenData = await tokenRes.json();
-        sessionStorage.setItem('spotify_access_token', tokenData.access_token);
-        sessionStorage.setItem('spotify_token_expiry', String(Date.now() + (tokenData.expires_in || 3600) * 1000));
-        if (tokenData.refresh_token) sessionStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
+        sessionStorage.setItem(this.storageKey('access_token'), tokenData.access_token);
+        sessionStorage.setItem(this.storageKey('token_expiry'), String(Date.now() + (tokenData.expires_in || 3600) * 1000));
+        if (tokenData.refresh_token) sessionStorage.setItem(this.storageKey('refresh_token'), tokenData.refresh_token);
         this.setState({ accessToken: tokenData.access_token });
         this.startPolling();
       } catch (e) {
-        this.addLog('> Spotify token exchange error: ' + e.message);
+        this.addLog('> ' + provider.label + ' token exchange error: ' + e.message);
       }
       return;
     }
-    const storedToken = sessionStorage.getItem('spotify_access_token');
-    const storedExpiry = parseInt(sessionStorage.getItem('spotify_token_expiry') || '0', 10);
+    const storedToken = sessionStorage.getItem(this.storageKey('access_token'));
+    const storedExpiry = parseInt(sessionStorage.getItem(this.storageKey('token_expiry')) || '0', 10);
     if (storedToken && Date.now() < storedExpiry) {
       this.setState({ accessToken: storedToken });
       this.startPolling();
     }
   }
 
-  connectSpotify = async () => {
+  selectProvider = (e) => {
+    const id = e.target.value;
+    const provider = MUSIC_PROVIDERS[id] || MUSIC_PROVIDERS.spotify;
+    localStorage.setItem('nocturne_provider', id);
+    this.setState({
+      provider: id,
+      providerNotice: provider.implemented ? '' : provider.label + ' support is coming soon — Spotify is fully supported today.'
+    });
+  };
+
+  connectProvider = async () => {
+    const provider = this.activeProvider;
+    if (!provider.implemented) {
+      this.setState({ providerNotice: provider.label + ' support is coming soon — pick Spotify for now.' });
+      return;
+    }
     const redirectUri = window.location.origin + window.location.pathname;
-    const scopes = ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state', 'user-read-recently-played', 'user-top-read'].join(' ');
     const verifier = this.generateCodeVerifier();
     const challenge = await this.generateCodeChallenge(verifier);
-    sessionStorage.setItem('spotify_code_verifier', verifier);
-    const url = 'https://accounts.spotify.com/authorize?client_id=' + CLIENT_ID +
+    sessionStorage.setItem(this.storageKey('code_verifier'), verifier);
+    const url = provider.authEndpoint + '?client_id=' + provider.clientId +
       '&response_type=code' +
       '&redirect_uri=' + encodeURIComponent(redirectUri) +
-      '&scope=' + encodeURIComponent(scopes) +
+      '&scope=' + encodeURIComponent(provider.scopes.join(' ')) +
       '&code_challenge_method=S256' +
       '&code_challenge=' + challenge +
       '&show_dialog=true';
@@ -249,18 +434,18 @@ class Component extends DCLogic {
   };
 
   disconnect = () => {
-    sessionStorage.removeItem('spotify_access_token');
-    sessionStorage.removeItem('spotify_token_expiry');
+    sessionStorage.removeItem(this.storageKey('access_token'));
+    sessionStorage.removeItem(this.storageKey('token_expiry'));
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.setState({ accessToken: null, track: null, activeMode: null });
   };
 
   handleAuthExpired = () => {
-    sessionStorage.removeItem('spotify_access_token');
-    sessionStorage.removeItem('spotify_token_expiry');
+    sessionStorage.removeItem(this.storageKey('access_token'));
+    sessionStorage.removeItem(this.storageKey('token_expiry'));
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.setState({ accessToken: null, track: null });
-    this.addLog('> Spotify session expired. Please reconnect.');
+    this.addLog('> ' + this.activeProvider.label + ' session expired. Please reconnect.');
   };
 
   startPolling() {
@@ -271,24 +456,13 @@ class Component extends DCLogic {
   pollTick = async () => {
     const token = this.state.accessToken;
     if (!token) return;
+    const provider = this.activeProvider;
     try {
-      const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-        headers: { Authorization: 'Bearer ' + token }
-      });
-      if (res.status === 204) { this.setState({ track: null }); return; }
-      if (res.status === 401) { this.handleAuthExpired(); return; }
-      if (!res.ok) { this.addLog('> Spotify poll failed (' + res.status + ')'); return; }
-      const data = await res.json();
-      if (!data || !data.item) { this.setState({ track: null }); return; }
-      const track = {
-        id: data.item.id,
-        name: data.item.name,
-        artists: data.item.artists.map(a => a.name).join(', '),
-        artistId: data.item.artists[0] ? data.item.artists[0].id : '',
-        albumArt: data.item.album.images[0] ? data.item.album.images[0].url : '',
-        progressMs: data.progress_ms || 0,
-        durationMs: data.item.duration_ms || 1
-      };
+      const result = await provider.getCurrentlyPlaying(token);
+      if (result.status === 'expired') { this.handleAuthExpired(); return; }
+      if (result.status === 'error') { this.addLog('> ' + provider.label + ' poll failed (' + result.code + ')'); return; }
+      if (result.status === 'empty') { this.setState({ track: null }); return; }
+      const track = result.track;
       this.setState({ track });
       const ratio = track.durationMs ? track.progressMs / track.durationMs : 0;
       if (this.state.activeMode && ratio > 0.66 && this.lastTriggeredId !== track.id && !this.state.isThinking) {
@@ -296,7 +470,7 @@ class Component extends DCLogic {
         this.triggerDJ(track);
       }
     } catch (e) {
-      this.addLog('> Network error while polling Spotify: ' + e.message);
+      this.addLog('> Network error while polling ' + provider.label + ': ' + e.message);
     }
   };
 
@@ -316,51 +490,11 @@ class Component extends DCLogic {
     this.triggerDJ(this.state.track, prompt);
   };
 
-  fetchArtistGenres = async (artistId) => {
-    if (!artistId) return [];
-    try {
-      const res = await fetch('https://api.spotify.com/v1/artists/' + artistId, {
-        headers: { Authorization: 'Bearer ' + this.state.accessToken }
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data.genres) ? data.genres : [];
-    } catch (e) {
-      return [];
-    }
-  };
+  fetchArtistGenres = (artistId) => this.activeProvider.getArtistGenres(this.state.accessToken, artistId);
 
-  fetchRecentHistory = async () => {
-    try {
-      const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
-        headers: { Authorization: 'Bearer ' + this.state.accessToken }
-      });
-      if (!res.ok) return { history: [], recentNames: [] };
-      const data = await res.json();
-      const items = Array.isArray(data.items) ? data.items : [];
-      // Spotify returns newest first; reverse so "most recent" is last, like a timeline.
-      const reversed = items.reverse();
-      const recentNames = reversed.map(it => (it.track.artists[0] ? it.track.artists[0].name : '') + ' - ' + it.track.name);
-      return { history: reversed.map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name), recentNames };
-    } catch (e) {
-      return { history: [], recentNames: [] };
-    }
-  };
+  fetchRecentHistory = () => this.activeProvider.getRecentlyPlayed(this.state.accessToken);
 
-  fetchAudioFeatures = async (trackId) => {
-    if (!trackId) return null;
-    try {
-      const res = await fetch('https://api.spotify.com/v1/audio-features/' + trackId, {
-        headers: { Authorization: 'Bearer ' + this.state.accessToken }
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (typeof data.tempo !== 'number') return null;
-      return { tempo: data.tempo, energy: data.energy, danceability: data.danceability };
-    } catch (e) {
-      return null;
-    }
-  };
+  fetchAudioFeatures = (trackId) => this.activeProvider.getAudioFeatures(this.state.accessToken, trackId);
 
   // ponytail: localStorage feedback log, no backend — good enough for a single-user app.
   loadSuggestionLog = () => {
@@ -396,24 +530,10 @@ class Component extends DCLogic {
     return { liked: uniq(liked), skipped: uniq(skipped) };
   };
 
-  fetchTopGenres = async () => {
-    try {
-      const res = await fetch('https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=15', {
-        headers: { Authorization: 'Bearer ' + this.state.accessToken }
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      const counts = {};
-      for (const artist of (data.items || [])) {
-        for (const g of (artist.genres || [])) counts[g] = (counts[g] || 0) + 1;
-      }
-      return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 8);
-    } catch (e) {
-      return [];
-    }
-  };
+  fetchTopGenres = () => this.activeProvider.getTopGenres(this.state.accessToken);
 
   triggerDJ = async (track, customPrompt) => {
+    const provider = this.activeProvider;
     this.setState({ isThinking: true });
     if (track) {
       this.addLog('> "' + track.name + '" by ' + track.artists + (customPrompt ? '" — My Turn: ' + customPrompt : ' is past 66% — analyzing vibe...'));
@@ -429,7 +549,7 @@ class Component extends DCLogic {
     ]);
     const { history, recentNames } = historyData;
     const feedback = this.getFeedbackSummary(recentNames);
-    if (genres.length) this.addLog('> Confirmed Spotify genres: ' + genres.join(', '));
+    if (genres.length) this.addLog('> Confirmed ' + provider.label + ' genres: ' + genres.join(', '));
     if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
     if (audioFeatures) this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM, energy ' + audioFeatures.energy.toFixed(2));
     if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
@@ -473,9 +593,9 @@ class Component extends DCLogic {
           this.addLog('> Skipping "' + sug.title + '" — ' + sug.artist + ' is the currently playing artist.');
           continue;
         }
-        const resolved = await this.resolveOnSpotify(sug.title, sug.artist);
+        const resolved = await this.resolveTrack(sug.title, sug.artist);
         if (!resolved) {
-          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on Spotify, and no tracks found for that artist — skipping.');
+          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on ' + provider.label + ', and no tracks found for that artist — skipping.');
           continue;
         }
         const resolvedArtists = splitArtists(resolved.track.artists.map(a => a.name));
@@ -490,7 +610,7 @@ class Component extends DCLogic {
         if (ok) queuedCount++;
       }
       if (queuedCount === 0) {
-        this.addLog('> None of the AI\'s suggestions could be verified on Spotify.');
+        this.addLog('> None of the AI\'s suggestions could be verified on ' + provider.label + '.');
       }
     } catch (e) {
       this.addLog('> DJ engine error: ' + e.message);
@@ -498,58 +618,40 @@ class Component extends DCLogic {
     this.setState({ isThinking: false });
   };
 
-  searchSpotify = async (query, limit) => {
-    const token = this.state.accessToken;
-    try {
-      const res = await fetch('https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=track&limit=' + limit, {
-        headers: { Authorization: 'Bearer ' + token }
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.tracks && data.tracks.items) || [];
-    } catch (e) {
-      return [];
-    }
+  // Generic provider-aware helpers — default to whichever provider is
+  // currently active, but accept an explicit providerId override so callers
+  // (or future multi-provider flows) aren't locked to the active one.
+  searchTrack = (query, limit, providerId = this.state.provider) => {
+    const provider = MUSIC_PROVIDERS[providerId] || MUSIC_PROVIDERS.spotify;
+    return provider.searchTrack(this.state.accessToken, query, limit);
   };
 
-  // Returns { track, fellBack } — fellBack means the AI's exact title didn't
-  // exist, so we queued the artist's most popular real track instead.
-  resolveOnSpotify = async (title, artist) => {
-    const exact = await this.searchSpotify('track:' + title + ' artist:' + artist, 1);
-    if (exact[0]) return { track: exact[0], fellBack: false };
-
-    const byArtist = await this.searchSpotify('artist:"' + artist + '"', 5);
-    if (!byArtist.length) return null;
-    const top = byArtist.reduce((a, b) => ((b.popularity || 0) > (a.popularity || 0) ? b : a));
-    return { track: top, fellBack: true };
+  resolveTrack = (title, artist, providerId = this.state.provider) => {
+    const provider = MUSIC_PROVIDERS[providerId] || MUSIC_PROVIDERS.spotify;
+    return provider.resolveTrack(this.state.accessToken, title, artist);
   };
 
   queueTrack = async (found, reason) => {
-    const token = this.state.accessToken;
-    try {
-      const queueRes = await fetch('https://api.spotify.com/v1/me/player/queue?uri=' + encodeURIComponent(found.uri), {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token }
-      });
-      if (queueRes.ok || queueRes.status === 204) {
-        this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (reason ? ' — ' + reason : ''));
-        this.recordSuggestion(found.name, found.artists[0] ? found.artists[0].name : '');
-        return true;
-      }
-      if (queueRes.status === 404) {
-        this.addLog('> Queue failed: no active Spotify device found.');
-      } else {
-        this.addLog('> Queue failed for "' + found.name + '" (' + queueRes.status + ')');
-      }
-      return false;
-    } catch (e) {
-      this.addLog('> Error queueing "' + found.name + '": ' + e.message);
-      return false;
+    const provider = this.activeProvider;
+    const result = await provider.queueTrack(this.state.accessToken, found);
+    if (result.ok) {
+      this.addLog('> Queued "' + found.name + '" by ' + found.artists.map(a => a.name).join(', ') + (reason ? ' — ' + reason : ''));
+      this.recordSuggestion(found.name, found.artists[0] ? found.artists[0].name : '');
+      return true;
     }
+    if (result.reason === 'no_device') {
+      this.addLog('> Queue failed: no active ' + provider.label + ' device found.');
+    } else if (result.message) {
+      this.addLog('> Error queueing "' + found.name + '": ' + result.message);
+    } else {
+      this.addLog('> Queue failed for "' + found.name + '" (' + result.status + ')');
+    }
+    return false;
   };
 
   renderVals() {
-    const { accessToken, track, activeMode, isThinking, logs, myTurnDraft } = this.state;
+    const { provider: providerId, providerNotice, accessToken, track, activeMode, isThinking, logs, myTurnDraft } = this.state;
+    const provider = this.activeProvider;
     const connected = !!accessToken;
     const hasTrack = !!track;
     const progressPct = track ? Math.min(100, (track.progressMs / track.durationMs) * 100) : 0;
@@ -559,6 +661,10 @@ class Component extends DCLogic {
       btnClass: activeMode === id ? 'btn btn-primary' : 'btn btn-secondary',
       onClick: () => this.selectMode(id)
     }));
+    const providerOptions = Object.keys(MUSIC_PROVIDERS).map(id => ({
+      id,
+      label: MUSIC_PROVIDERS[id].label + (MUSIC_PROVIDERS[id].implemented ? '' : ' (coming soon)')
+    }));
     let engineStatusText = 'DJ engine idle — pick a mode to start watching your queue.';
     if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
     else if (activeMode) engineStatusText = 'Watching "' + MODES[activeMode].label + '" — will act near track end.';
@@ -567,6 +673,7 @@ class Component extends DCLogic {
       notConnected: !connected,
       hasTrack,
       noTrack: !hasTrack,
+      noTrackText: 'Nothing playing on ' + provider.label + ' right now.',
       trackAlbumArt: track ? track.albumArt : '',
       trackName: track ? track.name : '',
       trackArtists: track ? track.artists : '',
@@ -585,8 +692,15 @@ class Component extends DCLogic {
       manualSuggest: this.manualSuggest,
       suggestBtnClass: isThinking ? 'btn btn-secondary' : 'btn btn-primary',
       suggestBtnLabel: isThinking ? 'Thinking...' : 'Suggest now',
-      connectSpotify: this.connectSpotify,
-      disconnect: this.disconnect
+      connectedProviderLabel: provider.label + ' Connected',
+      connectLabel: 'Connect to ' + provider.label,
+      connectProvider: this.connectProvider,
+      disconnect: this.disconnect,
+      providerOptions,
+      selectedProvider: providerId,
+      selectProvider: this.selectProvider,
+      hasProviderNotice: !!providerNotice,
+      providerNotice
     };
   }
 }
