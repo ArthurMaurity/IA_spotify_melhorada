@@ -98,15 +98,31 @@ functions instead.)
 
 ## Adding YouTube Music
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a
-   project (or reuse one), enable **YouTube Data API v3**, then create an
-   OAuth 2.0 Client ID of type **Web application** under
-   APIs & Services → Credentials.
-2. Add your deployed URL (and `http://localhost:3000/` for local dev) as an
-   **Authorized redirect URI**.
-3. Set `YOUTUBE_CLIENT_ID` in `index.html` (the constant, not an env var —
+You need an OAuth **Client ID + Client Secret**, not a plain API key — every
+call this app makes that isn't a public search (creating/writing to the
+"Nocturne DJ Queue" playlist) operates on the listener's own account, which
+requires OAuth user consent rather than a key.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), select or
+   create a project, then enable **YouTube Data API v3** at
+   `console.cloud.google.com/apis/library/youtube.googleapis.com`.
+2. Credential management now lives under **Google Auth Platform → Clients**
+   (`console.cloud.google.com/auth/clients`), not the older
+   "APIs & Services → Credentials" page. Click **Create Client**, type
+   **Web application**, and under **Authorized redirect URIs** add your
+   deployed URL exactly as the browser will send it (`https://<domain>/`)
+   plus `http://localhost:3000/` for local `vercel dev` testing.
+3. **The Client Secret is shown once, at creation time.** Copy it
+   immediately — afterward the console only shows the last 4 characters, and
+   losing it means generating a new one.
+4. Before OAuth will work at all, finish the consent screen setup under
+   **Google Auth Platform → Overview → Get Started** (app name, support
+   email, Audience: External). While publishing status is **Testing** (the
+   default, no Google review needed), only accounts added under
+   **Audience → Test users** can authorize — add your own account there.
+5. Set `YOUTUBE_CLIENT_ID` in `index.html` (the constant, not an env var —
    see above) to the Client ID.
-4. Set `YOUTUBE_CLIENT_SECRET` as a server env var (`.env` locally, Vercel
+6. Set `YOUTUBE_CLIENT_SECRET` as a server env var (`.env` locally, Vercel
    Project Settings for deploys). This one **is** a real secret — never put
    it in `index.html`.
 
