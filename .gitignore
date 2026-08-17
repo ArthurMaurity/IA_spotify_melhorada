@@ -226,3 +226,8 @@ session_log.txt
 
 .vercel
 .env*
+
+# Ruflo/claude-flow runtime state — local, regenerates every session, pure noise in diffs
+.claude-flow/
+.claude/proven-config.json
+.claude/.proven-config-version
