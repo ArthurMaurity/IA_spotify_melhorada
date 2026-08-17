@@ -8,10 +8,15 @@ const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
 // and llama-3.1 70b, then the whole llama3-70b/8b + mixtral fallback list all
 // got decommissioned within the same second). Hardcoded model IDs will always
 // eventually rot, so instead we ask Groq's own catalog which chat models are
-// currently live and pick one at request time. The answer is cached at module
-// scope so a warm serverless instance reuses it instead of listing models on
-// every request — only a cold start (or a decommissioned cache hit) re-fetches.
-let cachedModelId = null;
+// currently live and rank them at request time. The ranking is cached at
+// module scope so a warm serverless instance reuses it instead of listing
+// models on every request. We cache the whole ranked list, not just the top
+// pick — a model can exist and pass our filters but still fail per-request
+// (e.g. json_validate_failed on a specific prompt), and re-running the same
+// deterministic ranking would just hand back that same failed model again.
+// Keeping the full list lets the fallback loop walk to the next-best model
+// instead of looping on one bad pick.
+let cachedModelList = null;
 
 const PREFERRED_TAGS = ['versatile', 'instruct', 'chat'];
 
@@ -33,11 +38,14 @@ const EXCLUDED_PATTERNS = [
   'compound',  // Groq's agentic tool-router systems — unpredictable with strict JSON output
 ];
 
-function pickChatModel(models) {
-  const candidates = models.filter((m) => {
-    const id = String(m.id || '').toLowerCase();
-    return !EXCLUDED_PATTERNS.some((pattern) => id.includes(pattern));
-  });
+function isBannedModel(id) {
+  const lower = String(id || '').toLowerCase();
+  return EXCLUDED_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
+// Returns every viable chat model, best-first — not just the top pick.
+function rankChatModels(models) {
+  const candidates = models.filter((m) => !isBannedModel(m.id));
   candidates.sort((a, b) => {
     const windowDiff = (b.context_window || 0) - (a.context_window || 0);
     if (windowDiff !== 0) return windowDiff;
@@ -45,10 +53,10 @@ function pickChatModel(models) {
     const bPreferred = PREFERRED_TAGS.some((tag) => String(b.id || '').toLowerCase().includes(tag));
     return (bPreferred ? 1 : 0) - (aPreferred ? 1 : 0);
   });
-  return candidates[0]?.id || null;
+  return candidates.map((m) => m.id);
 }
 
-async function discoverModel(apiKey) {
+async function discoverModelList(apiKey) {
   const res = await fetch(GROQ_MODELS_URL, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -56,31 +64,25 @@ async function discoverModel(apiKey) {
     throw new Error(`Failed to list Groq models: ${await res.text()}`);
   }
   const data = await res.json();
-  const modelId = pickChatModel(Array.isArray(data.data) ? data.data : []);
-  if (!modelId) {
+  const ranked = rankChatModels(Array.isArray(data.data) ? data.data : []);
+  if (!ranked.length) {
     throw new Error('No active Groq chat model found in the models list');
   }
-  return modelId;
+  return ranked;
 }
 
-function isBannedModel(id) {
-  const lower = String(id || '').toLowerCase();
-  return EXCLUDED_PATTERNS.some((pattern) => lower.includes(pattern));
-}
-
-async function getActiveModel(apiKey, forceRefresh) {
-  // Defensive: a warm process may still be holding a cached value picked by an
-  // older, buggier filter (e.g. a guard model). Never trust a banned cached ID —
-  // invalidate it immediately and force a fresh discovery instead of reusing it.
-  if (cachedModelId && isBannedModel(cachedModelId)) {
-    console.warn(`Invalidating banned cached model: ${cachedModelId}`);
-    cachedModelId = null;
+async function getModelCandidates(apiKey, forceRefresh) {
+  // Defensive: a warm process may still be holding a cached list picked by an
+  // older, buggier filter (e.g. containing a guard model). Strip any banned
+  // entries so a stale cache can never resurrect a model we've since excluded.
+  if (cachedModelList) {
+    cachedModelList = cachedModelList.filter((id) => !isBannedModel(id));
   }
-  if (!cachedModelId || forceRefresh) {
-    cachedModelId = await discoverModel(apiKey);
-    console.warn(`Discovered active Groq model: ${cachedModelId}`);
+  if (!cachedModelList || !cachedModelList.length || forceRefresh) {
+    cachedModelList = await discoverModelList(apiKey);
+    console.warn(`Discovered Groq chat models (best-first): ${cachedModelList.join(', ')}`);
   }
-  return cachedModelId;
+  return cachedModelList;
 }
 
 const SYSTEM_PROMPT = [
@@ -163,10 +165,25 @@ function extractJson(text) {
 function isInvalidModelResponse(status, errText) {
   return status === 404
     || status === 400
-    || /not found|does not exist|decommissioned/i.test(errText);
+    || /not found|does not exist|decommissioned|json_validate_failed/i.test(errText);
+}
+
+// Reasoning models (gpt-oss, qwen3) spend part of their token budget on an
+// internal "reasoning" trace before the actual answer. With our long DJ
+// system prompt that trace can eat the whole completion, leaving nothing for
+// the final JSON and triggering json_validate_failed. Dialing reasoning down
+// fixes it — but the valid values differ per model family, and sending an
+// unsupported value (or the param at all, for a non-reasoning model) is
+// itself a 400, so this only applies per-family, never as a blanket default.
+function getReasoningEffort(model) {
+  const id = String(model || '').toLowerCase();
+  if (id.includes('gpt-oss')) return 'low';
+  if (id.includes('qwen')) return 'none';
+  return null;
 }
 
 async function requestCompletion(apiKey, model, messages) {
+  const reasoningEffort = getReasoningEffort(model);
   return fetch(GROQ_URL, {
     method: 'POST',
     headers: {
@@ -177,6 +194,7 @@ async function requestCompletion(apiKey, model, messages) {
       model,
       temperature: 0.4,
       response_format: { type: 'json_object' },
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       messages,
     }),
   });
@@ -184,7 +202,8 @@ async function requestCompletion(apiKey, model, messages) {
 
 async function callGroqWithFallback(apiKey, messages) {
   const envModel = process.env.GROQ_MODEL;
-  const candidates = [...new Set([envModel, await getActiveModel(apiKey)].filter(Boolean))];
+  const ranked = await getModelCandidates(apiKey);
+  const candidates = [...new Set([envModel, ...ranked].filter(Boolean))];
   const tried = new Set();
   let lastError = null;
   let refreshedOnce = false;
@@ -203,21 +222,24 @@ async function callGroqWithFallback(apiKey, messages) {
     }
 
     if (groqRes.ok) {
+      // This model actually works for real requests — promote it to the front
+      // of the cache so future calls try it first instead of a flakier one
+      // that merely ranked higher on paper (context window, name tags).
+      cachedModelList = [model, ...ranked.filter((id) => id !== model)];
       return groqRes.json();
     }
 
     const errText = await groqRes.text();
     if (isInvalidModelResponse(groqRes.status, errText)) {
-      console.warn(`Model ${model} not found, falling back to next...`);
+      console.warn(`Model ${model} failed (${groqRes.status}), falling back to next...`);
       lastError = new Error(`Groq request failed for model ${model}: ${errText}`);
-      if (model === cachedModelId) cachedModelId = null;
 
-      // Every known candidate is dead — re-list Groq's catalog once in case a
-      // new model appeared since our cache was populated, and keep going.
+      // Every known candidate has failed — re-list Groq's catalog once in case
+      // it has changed since our cache was populated, and queue up anything new.
       if (i === candidates.length - 1 && !refreshedOnce) {
         refreshedOnce = true;
-        const fresh = await getActiveModel(apiKey, true);
-        if (!tried.has(fresh)) candidates.push(fresh);
+        const fresh = await getModelCandidates(apiKey, true);
+        for (const id of fresh) if (!tried.has(id)) candidates.push(id);
       }
       continue;
     }
