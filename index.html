@@ -62,6 +62,12 @@
         </sc-if>
       </div>
 
+      <sc-if value="{{ hasCapabilityNote }}" hint-placeholder-val="{{ false }}">
+        <div class="card" style="background:var(--color-neutral-800);border:1px solid var(--color-neutral-700);">
+          <p class="card-body" style="margin:0;font-size:12px;color:var(--color-neutral-300);">{{ capabilityNote }}</p>
+        </div>
+      </sc-if>
+
       <div class="card" style="display:flex;flex-direction:column;gap:var(--space-3);">
         <div class="card-kicker">DJ Mode</div>
         <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
@@ -125,6 +131,9 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 const CLIENT_ID = 'da88cb72c0e7480fa5d07d651723b926';
+// Placeholders -- see README "Adding your own credentials" for setup steps.
+// Both are public identifiers (safe to ship in client code, unlike API secrets).
+const YOUTUBE_CLIENT_ID = 'YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
 const MODES = {
   default: { label: 'Default Flow', vibe: 'a natural continuation of the current energy and genre' },
   gaming: { label: 'Gaming Mode', vibe: 'high-energy, mostly instrumental or electronic tracks with a driving rhythm, good for focus during gameplay' },
@@ -137,6 +146,17 @@ const MODES = {
 // queueTrack(token, track) -> { ok, reason?, status?, message? } }.
 // Unimplemented providers only need { id, label, implemented: false } — the
 // UI gates on `implemented` before ever touching the rest of the interface.
+//
+// Two optional interface extensions beyond Spotify's original PKCE-only shape:
+// - authMode: 'musickit' opts a provider out of the generic PKCE redirect
+//   flow entirely in favor of MusicKit.authorize() (see connectAppleMusic /
+//   restoreAppleSession) -- Apple Music has no standard OAuth redirect flow.
+// - tokenRequestFormat: 'json' tells the PKCE flow to POST JSON to
+//   tokenEndpoint instead of x-www-form-urlencoded, for providers (YouTube)
+//   whose token exchange is proxied through our own serverless function
+//   rather than hitting the real OAuth provider directly from the browser.
+// getCurrentlyPlaying can also return { status: 'unsupported' } (handled like
+// 'empty') for providers with no now-playing concept at all (YouTube).
 const MUSIC_PROVIDERS = {
   spotify: {
     id: 'spotify',
@@ -146,6 +166,7 @@ const MUSIC_PROVIDERS = {
     authEndpoint: 'https://accounts.spotify.com/authorize',
     tokenEndpoint: 'https://accounts.spotify.com/api/token',
     scopes: ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state', 'user-read-recently-played', 'user-top-read'],
+    extraAuthParams: { show_dialog: 'true' },
 
     async getCurrentlyPlaying(token) {
       const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
@@ -269,10 +290,276 @@ const MUSIC_PROVIDERS = {
     }
   },
 
-  // Placeholders for the multi-platform expansion — the UI already lets the
-  // listener pick these; wiring up the real APIs is future work.
-  youtube: { id: 'youtube', label: 'YouTube Music', implemented: false },
-  apple: { id: 'apple', label: 'Apple Music', implemented: false }
+  // Google's OAuth token endpoint requires a client_secret at exchange time
+  // even for PKCE requests from a "Web application" client type (unlike
+  // Spotify, which is PKCE-only with no secret) -- confirmed against Google's
+  // own docs, since this is exactly the kind of detail that's easy to get
+  // wrong from memory. tokenEndpoint therefore points at our own serverless
+  // proxy (api/youtube-token.js), which holds YOUTUBE_CLIENT_SECRET
+  // server-side and forwards the exchange, the same way api/groq.js keeps
+  // GROQ_API_KEY off the client. tokenRequestFormat: 'json' tells
+  // restoreSession/refreshAccessToken to POST JSON to that proxy instead of
+  // the x-www-form-urlencoded body real OAuth token endpoints expect.
+  youtube: {
+    id: 'youtube',
+    label: 'YouTube Music',
+    implemented: true,
+    clientId: YOUTUBE_CLIENT_ID,
+    authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenEndpoint: '/api/youtube-token',
+    tokenRequestFormat: 'json',
+    scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+    // access_type=offline + prompt=consent so Google actually hands back a
+    // refresh_token (it only does so on first consent otherwise).
+    extraAuthParams: { access_type: 'offline', prompt: 'consent' },
+
+    // The YouTube Data API has no "what's playing right now" concept at all
+    // (confirmed: no such endpoint exists in the public API) -- there is no
+    // cross-device now-playing/queue-state surface the way Spotify has.
+    // DJ Mode's auto-trigger-at-66% therefore can't work for this provider;
+    // 'unsupported' is handled like 'empty' by pollTick, and the UI shows a
+    // capability note steering the listener to My Turn instead.
+    async getCurrentlyPlaying() {
+      return { status: 'unsupported' };
+    },
+
+    // No public API exposes a listener's actual recent-play history for
+    // YouTube/YouTube Music (only channel-owner analytics do) -- degrade
+    // gracefully rather than pretend to have data we don't.
+    async getRecentlyPlayed() {
+      return { history: [], recentNames: [] };
+    },
+
+    async getAudioFeatures() {
+      return null;
+    },
+
+    // No public genre-tagging surface for channels/artists either.
+    async getArtistGenres() {
+      return [];
+    },
+
+    async getTopGenres() {
+      return [];
+    },
+
+    async searchTrack(token, query, limit) {
+      try {
+        const res = await fetch(
+          'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=' +
+          limit + '&q=' + encodeURIComponent(query),
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.items || [])
+          .filter(it => it.id && it.id.videoId)
+          .map(it => ({
+            id: it.id.videoId,
+            uri: it.id.videoId,
+            name: it.snippet.title,
+            artists: [{ name: it.snippet.channelTitle }]
+          }));
+      } catch (e) {
+        return [];
+      }
+    },
+
+    // Returns { track, fellBack } like the Spotify provider. YouTube search
+    // has no direct "popularity" field on search results, so the fallback
+    // ranks candidates by view count via a follow-up videos.list call --
+    // the closest analog to Spotify's popularity-based tiebreak.
+    async resolveTrack(token, title, artist) {
+      const exact = await this.searchTrack(token, title + ' ' + artist, 1);
+      if (exact[0]) return { track: exact[0], fellBack: false };
+
+      const byArtist = await this.searchTrack(token, artist, 5);
+      if (!byArtist.length) return null;
+      try {
+        const ids = byArtist.map(v => v.id).join(',');
+        const statsRes = await fetch('https://www.googleapis.com/youtube/v3/videos?part=statistics&id=' + ids, {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          const viewsById = {};
+          for (const v of (statsData.items || [])) viewsById[v.id] = parseInt((v.statistics || {}).viewCount || '0', 10);
+          byArtist.sort((a, b) => (viewsById[b.id] || 0) - (viewsById[a.id] || 0));
+        }
+      } catch (e) { /* fall back to search-relevance order if the stats call fails */ }
+      return { track: byArtist[0], fellBack: true };
+    },
+
+    // There's no "device queue" to push into, so queueing means adding to a
+    // dedicated "Nocturne DJ Queue" playlist (created on first use) instead
+    // -- the listener plays that playlist to actually hear the suggestions.
+    async queueTrack(token, track) {
+      try {
+        let playlistId = sessionStorage.getItem('youtube_queue_playlist_id');
+        if (!playlistId) {
+          const listRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50', {
+            headers: { Authorization: 'Bearer ' + token }
+          });
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const existing = (listData.items || []).find(p => p.snippet.title === 'Nocturne DJ Queue');
+            if (existing) playlistId = existing.id;
+          }
+          if (!playlistId) {
+            const createRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                snippet: { title: 'Nocturne DJ Queue', description: 'Auto-managed by Nocturne DJ -- suggestions land here.' },
+                status: { privacyStatus: 'private' }
+              })
+            });
+            if (!createRes.ok) return { ok: false, reason: 'error', status: createRes.status };
+            playlistId = (await createRes.json()).id;
+          }
+          sessionStorage.setItem('youtube_queue_playlist_id', playlistId);
+        }
+        const insertRes = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId: track.id } } })
+        });
+        if (insertRes.ok) return { ok: true };
+        return { ok: false, reason: 'error', status: insertRes.status };
+      } catch (e) {
+        return { ok: false, reason: 'error', message: e.message };
+      }
+    }
+  },
+
+  // Apple Music has no cross-device "now playing"/queue API at all -- MusicKit
+  // JS only ever knows what ITS OWN embedded player is doing. So unlike
+  // Spotify (which controls an already-playing device elsewhere), using Apple
+  // Music here means playing through this page via MusicKit's player. In
+  // exchange, that gives real playback + real queue control, which YouTube
+  // can't offer at all. authMode: 'musickit' routes auth through
+  // MusicKit.authorize() instead of the generic PKCE redirect used above.
+  apple: {
+    id: 'apple',
+    label: 'Apple Music',
+    implemented: true,
+    authMode: 'musickit',
+
+    async getCurrentlyPlaying() {
+      const music = window.MusicKit && MusicKit.getInstance();
+      if (!music || !music.isAuthorized) return { status: 'expired' };
+      const item = music.nowPlayingItem;
+      if (!item) return { status: 'empty' };
+      const player = music.player || {};
+      const durationSec = player.currentPlaybackDuration || ((item.playbackDuration || 0) / 1000);
+      return {
+        status: 'ok',
+        track: {
+          id: item.id,
+          name: item.title,
+          // No stable catalog artist ID is reliably available on nowPlayingItem
+          // for every playback source, so artistName doubles as the "id" --
+          // getArtistGenres below looks it up by name instead of by ID.
+          artists: item.artistName,
+          artistId: item.artistName,
+          albumArt: item.artwork && item.artwork.url ? item.artwork.url.replace('{w}', '300').replace('{h}', '300') : '',
+          progressMs: (player.currentPlaybackTime || 0) * 1000,
+          durationMs: (durationSec || 0) * 1000 || 1
+        }
+      };
+    },
+
+    async getRecentlyPlayed() {
+      try {
+        const music = window.MusicKit && MusicKit.getInstance();
+        if (!music) return { history: [], recentNames: [] };
+        const res = await music.api.music('/v1/me/recent/played/tracks', { limit: 5 });
+        const items = ((res && res.data && res.data.data) || []).slice().reverse();
+        const recentNames = items.map(it => ((it.attributes || {}).artistName || '') + ' - ' + ((it.attributes || {}).name || ''));
+        return { history: recentNames.slice(), recentNames };
+      } catch (e) {
+        return { history: [], recentNames: [] };
+      }
+    },
+
+    async getAudioFeatures() {
+      return null; // Apple Music's catalog API has no tempo/energy/danceability equivalent.
+    },
+
+    async getArtistGenres(token, artistName) {
+      if (!artistName) return [];
+      try {
+        const music = window.MusicKit && MusicKit.getInstance();
+        if (!music) return [];
+        const storefront = music.storefrontId || sessionStorage.getItem('apple_storefront') || 'us';
+        const res = await music.api.music('/v1/catalog/' + storefront + '/search', { term: artistName, types: 'artists', limit: 1 });
+        const artist = ((res && res.data && res.data.results && res.data.results.artists && res.data.results.artists.data) || [])[0];
+        return (artist && artist.attributes && artist.attributes.genreNames) || [];
+      } catch (e) {
+        return [];
+      }
+    },
+
+    // No direct "top artists" endpoint; heavy-rotation content is the closest
+    // available signal, tallied into a genre frequency count like Spotify's provider does.
+    async getTopGenres() {
+      try {
+        const music = window.MusicKit && MusicKit.getInstance();
+        if (!music) return [];
+        const res = await music.api.music('/v1/me/history/heavy-rotation', { limit: 15 });
+        const counts = {};
+        for (const item of ((res && res.data && res.data.data) || [])) {
+          for (const g of ((item.attributes || {}).genreNames || [])) counts[g] = (counts[g] || 0) + 1;
+        }
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 8);
+      } catch (e) {
+        return [];
+      }
+    },
+
+    async searchTrack(token, query, limit) {
+      try {
+        const music = window.MusicKit && MusicKit.getInstance();
+        if (!music) return [];
+        const storefront = music.storefrontId || sessionStorage.getItem('apple_storefront') || 'us';
+        const res = await music.api.music('/v1/catalog/' + storefront + '/search', { term: query, types: 'songs', limit });
+        const songs = (res && res.data && res.data.results && res.data.results.songs && res.data.results.songs.data) || [];
+        return songs.map(s => ({
+          id: s.id,
+          uri: s.id,
+          name: s.attributes.name,
+          artists: [{ name: s.attributes.artistName }]
+        }));
+      } catch (e) {
+        return [];
+      }
+    },
+
+    // Apple's catalog search has no popularity/play-count figure to rank
+    // fallback candidates by (unlike Spotify's `popularity` or YouTube's view
+    // count), so the fallback is simply the top search-relevance result.
+    async resolveTrack(token, title, artist) {
+      const exact = await this.searchTrack(token, title + ' ' + artist, 1);
+      if (exact[0]) return { track: exact[0], fellBack: false };
+      const byArtist = await this.searchTrack(token, artist, 5);
+      if (!byArtist.length) return null;
+      return { track: byArtist[0], fellBack: true };
+    },
+
+    // playLater() appends after the current queue without interrupting
+    // playback -- MusicKit v3 has no queue.append(); mutation lives on the
+    // instance itself (playLater/playAt/setQueue), confirmed against current docs.
+    async queueTrack(token, track) {
+      try {
+        const music = window.MusicKit && MusicKit.getInstance();
+        if (!music) return { ok: false, reason: 'error', message: 'MusicKit not loaded' };
+        await music.playLater({ songs: [track.id] });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, reason: 'error', message: e.message };
+      }
+    }
+  }
 };
 
 // "Matuê, Teto" -> ['matue', 'teto']. Strips accents/punctuation so the
@@ -359,22 +646,19 @@ class Component extends DCLogic {
   async restoreSession() {
     const provider = this.activeProvider;
     if (!provider.implemented) return;
+    if (provider.authMode === 'musickit') return this.restoreAppleSession();
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (code) {
       window.history.replaceState({}, document.title, window.location.pathname);
       const verifier = sessionStorage.getItem(this.storageKey('code_verifier')) || '';
+      const redirectUri = window.location.origin + window.location.pathname;
+      const payload = { grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: provider.clientId, code_verifier: verifier };
       try {
         const tokenRes = await fetch(provider.tokenEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: window.location.origin + window.location.pathname,
-            client_id: provider.clientId,
-            code_verifier: verifier
-          })
+          headers: { 'Content-Type': provider.tokenRequestFormat === 'json' ? 'application/json' : 'application/x-www-form-urlencoded' },
+          body: provider.tokenRequestFormat === 'json' ? JSON.stringify(payload) : new URLSearchParams(payload)
         });
         if (!tokenRes.ok) {
           this.addLog('> ' + provider.label + ' token exchange failed (' + tokenRes.status + ').');
@@ -399,29 +683,90 @@ class Component extends DCLogic {
     }
   }
 
+  // Lazily injects the MusicKit JS SDK script tag once per page load.
+  loadMusicKit = () => {
+    if (window.MusicKit) return Promise.resolve();
+    if (this._musicKitPromise) return this._musicKitPromise;
+    this._musicKitPromise = new Promise((resolve, reject) => {
+      document.addEventListener('musickitloaded', () => resolve(), { once: true });
+      const script = document.createElement('script');
+      script.src = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
+      script.onerror = () => reject(new Error('Failed to load MusicKit JS'));
+      document.head.appendChild(script);
+    });
+    return this._musicKitPromise;
+  };
+
+  configureMusicKit = async () => {
+    await this.loadMusicKit();
+    const tokenRes = await fetch('/api/apple-token');
+    if (!tokenRes.ok) {
+      throw new Error('developer token request failed (' + tokenRes.status + ') — check APPLE_TEAM_ID/APPLE_KEY_ID/APPLE_PRIVATE_KEY on the server');
+    }
+    const { developerToken } = await tokenRes.json();
+    MusicKit.configure({ developerToken, app: { name: 'Nocturne DJ', build: '1.0.0' } });
+    return MusicKit.getInstance();
+  };
+
+  // MusicKit has no PKCE redirect -- authorize() opens Apple's own sign-in
+  // popup and resolves with a Music User Token directly, no code exchange needed.
+  connectAppleMusic = async () => {
+    try {
+      const music = await this.configureMusicKit();
+      const musicUserToken = await music.authorize();
+      if (!musicUserToken) return; // user closed the Apple sign-in popup without authorizing
+      sessionStorage.setItem(this.storageKey('access_token'), musicUserToken);
+      sessionStorage.setItem('apple_storefront', music.storefrontId || 'us');
+      this.setState({ accessToken: musicUserToken });
+      this.startPolling();
+    } catch (e) {
+      this.addLog('> Apple Music connect error: ' + e.message);
+      this.setState({ providerNotice: 'Apple Music connect failed: ' + e.message });
+    }
+  };
+
+  // On reload, MusicKit persists its own authorization state internally --
+  // we just need to re-configure it with a fresh developer token and check.
+  restoreAppleSession = async () => {
+    const storedToken = sessionStorage.getItem(this.storageKey('access_token'));
+    if (!storedToken) return;
+    try {
+      const music = await this.configureMusicKit();
+      if (music.isAuthorized) {
+        this.setState({ accessToken: storedToken });
+        this.startPolling();
+      } else {
+        sessionStorage.removeItem(this.storageKey('access_token'));
+      }
+    } catch (e) {
+      this.addLog('> Apple Music session restore error: ' + e.message);
+    }
+  };
+
   // Uses the stored refresh_token to silently mint a new access token without
   // sending the user through the PKCE redirect again. Spotify access tokens
   // expire after ~1h (expires_in), which used to force a full reconnect mid
   // DJ session -- exactly the overnight use case this app is built for.
   refreshAccessToken = async () => {
     const provider = this.activeProvider;
+    // MusicKit manages its own session lifetime internally -- there's no
+    // separate refresh_token/expiry we control, so there's no silent refresh
+    // path here; a lost Apple Music session just needs the user to reconnect.
+    if (provider.authMode === 'musickit') return false;
     const refreshToken = sessionStorage.getItem(this.storageKey('refresh_token'));
     if (!refreshToken) return false;
+    const payload = { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: provider.clientId };
     try {
       const tokenRes = await fetch(provider.tokenEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          client_id: provider.clientId
-        })
+        headers: { 'Content-Type': provider.tokenRequestFormat === 'json' ? 'application/json' : 'application/x-www-form-urlencoded' },
+        body: provider.tokenRequestFormat === 'json' ? JSON.stringify(payload) : new URLSearchParams(payload)
       });
       if (!tokenRes.ok) return false;
       const tokenData = await tokenRes.json();
       sessionStorage.setItem(this.storageKey('access_token'), tokenData.access_token);
       sessionStorage.setItem(this.storageKey('token_expiry'), String(Date.now() + (tokenData.expires_in || 3600) * 1000));
-      // Spotify doesn't always rotate the refresh token on renewal -- only overwrite ours if a new one comes back.
+      // Neither Spotify nor Google always rotate the refresh token on renewal -- only overwrite ours if a new one comes back.
       if (tokenData.refresh_token) sessionStorage.setItem(this.storageKey('refresh_token'), tokenData.refresh_token);
       this.setState({ accessToken: tokenData.access_token });
       return true;
@@ -434,6 +779,7 @@ class Component extends DCLogic {
   // Called before any authenticated request. Refreshes proactively when the
   // access token is close to expiry so we very rarely hit an actual 401.
   ensureFreshToken = async () => {
+    if (this.activeProvider.authMode === 'musickit') return true; // no expiry timestamp we control for MusicKit
     const expiry = parseInt(sessionStorage.getItem(this.storageKey('token_expiry')) || '0', 10);
     if (expiry && Date.now() > expiry - 60000) {
       return this.refreshAccessToken();
@@ -457,21 +803,31 @@ class Component extends DCLogic {
       this.setState({ providerNotice: provider.label + ' support is coming soon — pick Spotify for now.' });
       return;
     }
+    if (provider.authMode === 'musickit') return this.connectAppleMusic();
+    if (typeof provider.clientId === 'string' && provider.clientId.startsWith('YOUR_')) {
+      this.setState({ providerNotice: provider.label + ' needs a Client ID configured first — see README setup steps, then edit YOUTUBE_CLIENT_ID in index.html.' });
+      return;
+    }
     const redirectUri = window.location.origin + window.location.pathname;
     const verifier = this.generateCodeVerifier();
     const challenge = await this.generateCodeChallenge(verifier);
     sessionStorage.setItem(this.storageKey('code_verifier'), verifier);
-    const url = provider.authEndpoint + '?client_id=' + provider.clientId +
-      '&response_type=code' +
-      '&redirect_uri=' + encodeURIComponent(redirectUri) +
-      '&scope=' + encodeURIComponent(provider.scopes.join(' ')) +
-      '&code_challenge_method=S256' +
-      '&code_challenge=' + challenge +
-      '&show_dialog=true';
-    window.location.href = url;
+    const params = new URLSearchParams({
+      client_id: provider.clientId,
+      response_type: 'code',
+      redirect_uri: redirectUri,
+      scope: provider.scopes.join(' '),
+      code_challenge_method: 'S256',
+      code_challenge: challenge,
+      ...(provider.extraAuthParams || {})
+    });
+    window.location.href = provider.authEndpoint + '?' + params.toString();
   };
 
   disconnect = () => {
+    if (this.activeProvider.authMode === 'musickit' && window.MusicKit) {
+      try { MusicKit.getInstance().unauthorize(); } catch (e) { /* already unauthorized or never configured */ }
+    }
     sessionStorage.removeItem(this.storageKey('access_token'));
     sessionStorage.removeItem(this.storageKey('token_expiry'));
     if (this.pollInterval) clearInterval(this.pollInterval);
@@ -509,7 +865,9 @@ class Component extends DCLogic {
         return;
       }
       if (result.status === 'error') { this.addLog('> ' + provider.label + ' poll failed (' + result.code + ')'); return; }
-      if (result.status === 'empty') { this.setState({ track: null }); return; }
+      // 'unsupported' = provider has no now-playing concept at all (YouTube) --
+      // treat like 'empty' rather than spamming an error every 15s.
+      if (result.status === 'empty' || result.status === 'unsupported') { this.setState({ track: null }); return; }
       const track = result.track;
       this.setState({ track });
       const ratio = track.durationMs ? track.progressMs / track.durationMs : 0;
@@ -719,6 +1077,12 @@ class Component extends DCLogic {
     let engineStatusText = 'DJ engine idle — pick a mode to start watching your queue.';
     if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
     else if (activeMode) engineStatusText = 'Watching "' + MODES[activeMode].label + '" — will act near track end.';
+    let capabilityNote = '';
+    if (connected && providerId === 'youtube') {
+      capabilityNote = 'YouTube Music has no "now playing" API, so DJ Mode can\'t auto-detect tracks — use My Turn instead. Suggestions are added to a "Nocturne DJ Queue" playlist rather than an in-app queue.';
+    } else if (connected && providerId === 'apple') {
+      capabilityNote = 'Apple Music only sees what plays through this page (no API exposes the native app\'s playback elsewhere) — press play here for DJ Mode and Now Playing to work live.';
+    }
     return {
       connected,
       notConnected: !connected,
@@ -751,7 +1115,9 @@ class Component extends DCLogic {
       selectedProvider: providerId,
       selectProvider: this.selectProvider,
       hasProviderNotice: !!providerNotice,
-      providerNotice
+      providerNotice,
+      hasCapabilityNote: !!capabilityNote,
+      capabilityNote
     };
   }
 }

@@ -231,3 +231,6 @@ session_log.txt
 .claude-flow/
 .claude/proven-config.json
 .claude/.proven-config-version
+
+# Local-only Claude Code guidance — not part of the shipped project
+CLAUDE.md
