@@ -97,17 +97,17 @@ const SYSTEM_PROMPT = [
   'ERA / DECADE STRICTNESS (mandatory): respect the timeline of the current track. Do not jump from a 2020s contemporary hit to 2010s or 90s tracks unless the listener explicitly asks for it. A modern trap song must lead to other modern trap songs; a 90s track should lead to tracks of that same era and production style. Specifically: do not suggest 90s boom bap (like Racionais MCs) or funk when the current track is 2020s trap.',
   'STRICT ANTI-HALLUCINATION (mandatory): do not invent live versions or acoustic versions unless you are 100% certain they exist. Do not attribute famous songs to the wrong artist. If you cannot guarantee a deep cut is real, suggest a verified, well-known track from a highly similar artist instead of inventing one.',
   'SUBGENRE LOCK (mandatory): the "why" field in your JSON response must explicitly name the exact shared subgenre or production trait that justifies the pick alongside the current track (e.g. "keeps the 90s/2000s romantic pagode lineage", "shares cavaquinho/violão instrumentation", "similar samba-exaltação tempo") — a vague "similar vibe" is not acceptable.',
-  'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest a song or artist that already appears in that history.',
+  'When given the listener\'s recent listening history, treat it as a timeline (oldest to newest) and bridge from the most recent entry — immediate coherence with it outweighs everything except an explicit listener instruction. Never suggest the exact same song that already appears in that history — a different song by an artist who already appears there is fine and often desirable, do not avoid an artist just because they were played recently.',
   'When given the listener\'s usual top genres, use them as a tiebreaker between otherwise-valid picks, but never let them override the golden rule of matching the current track\'s concrete style.',
   'MAINSTREAM HIT PRIORITY (mandatory): when dealing with regional, non-English, or specific genres like pagode or samba, strictly suggest the artist\'s most famous, undisputed Top 10 hits. Do not attempt to find deep cuts, rare tracks, or live versions. Absolute factual accuracy of the Artist + Song pairing is your highest priority.',
   'Suggest only real, existing, commercially released songs that actually exist on Spotify, by real artists who actually work in that confirmed genre. Never invent tracks, and never guess a plausible-sounding title you are not confident is a real released song — if you are unsure a specific song exists, pick a different, well-known song by an artist in the same confirmed genre that you are certain is real.',
-  'NO REPEAT (critical): you must NEVER suggest the exact artist(s) that are currently playing, including featured artists. If the current track is by Matuê, absolutely do not suggest Matuê — not a different song by them, not a feature, not a collaboration. Never repeat the current song either.',
+  'NO REPEAT (critical): never suggest the exact same song that is currently playing (same title and same artist) or a song that was already suggested earlier in this listening session. Suggesting a *different* song by the artist who is currently playing is fine and often desirable — do not avoid an artist just because they are currently playing.',
   'Rank your suggestions from most to least confident that they are real. Provide between 10 and 12 tracks — a downstream Spotify lookup will discard any that turn out not to exist, so lean toward 12 real candidates when you can.',
   'Respond with RAW JSON only (no markdown fences, no prose), exactly in this shape:',
   '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the exact shared subgenre or production trait, per SUBGENRE LOCK"}]}',
 ].join(' ');
 
-function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt }) {
+function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, avoidList, mode, customPrompt }) {
   const parts = [];
   if (track || artist) {
     parts.push(`Current track: "${track || 'unknown'}" by ${artist || 'unknown artist'}.`);
@@ -137,6 +137,15 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatu
   }
   if (feedback && Array.isArray(feedback.skipped) && feedback.skipped.length) {
     parts.push(`Listener never played these past AI suggestions (avoid repeating this exact style/artist guess): ${feedback.skipped.join(' | ')}.`);
+  }
+  if (Array.isArray(avoidList) && avoidList.length) {
+    // Ground truth from the provider itself (already queued, or actually
+    // played in roughly the last 4h) -- distinct from `history` above
+    // (a short recency-ordered timeline for narrative bridging) and from
+    // `feedback` (soft liked/skipped signal). This is a harder "don't waste
+    // a candidate slot on these" list. A different song by an artist in this
+    // list is completely fine per NO REPEAT -- only the exact songs listed are off-limits.
+    parts.push(`Songs already queued or played very recently — do NOT suggest any of these exact songs again (a different song by the same artist is fine): ${avoidList.join(' | ')}.`);
   }
   if (mode) {
     parts.push(`Session mode / vibe to respect alongside the golden rule: ${mode}.`);
@@ -270,12 +279,12 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
   }
 
-  const { track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt } = req.body || {};
+  const { track, artist, genres, history, topGenres, audioFeatures, feedback, avoidList, mode, customPrompt } = req.body || {};
 
   try {
     const data = await callGroqWithFallback(apiKey, [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, mode, customPrompt }) },
+      { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, audioFeatures, feedback, avoidList, mode, customPrompt }) },
     ]);
 
     const rawText = data?.choices?.[0]?.message?.content || '';

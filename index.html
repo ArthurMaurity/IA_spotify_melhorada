@@ -193,18 +193,48 @@ const MUSIC_PROVIDERS = {
 
     async getRecentlyPlayed(token) {
       try {
-        const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=5', {
-          headers: { Authorization: 'Bearer ' + token }
-        });
-        if (!res.ok) return { history: [], recentNames: [] };
+        // Fetch everything from the last 4h (up to Spotify's 50-item cap on
+        // this endpoint), not just the last 5. `history` below stays a short
+        // 5-track slice for the prompt's "bridge from the most recent track"
+        // narrative (unchanged from before), but the full widened set now
+        // also feeds `recentPlayed` -- used by triggerDJ's don't-repeat-this-
+        // exact-song guard -- and `recentNames` -- used by
+        // getFeedbackSummary's liked-detection -- both of which are more
+        // accurate with a longer real window than just 5 tracks.
+        const fourHoursAgoMs = Date.now() - 4 * 60 * 60 * 1000;
+        const res = await fetch(
+          'https://api.spotify.com/v1/me/player/recently-played?limit=50&after=' + fourHoursAgoMs,
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        if (!res.ok) return { history: [], recentNames: [], recentPlayed: [] };
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
         // Spotify returns newest first; reverse so "most recent" is last, like a timeline.
         const reversed = items.reverse();
+        const recentPlayed = reversed.map(it => ({ title: it.track.name, artist: it.track.artists.map(a => a.name).join(', ') }));
         const recentNames = reversed.map(it => (it.track.artists[0] ? it.track.artists[0].name : '') + ' - ' + it.track.name);
-        return { history: reversed.map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name), recentNames };
+        const history = reversed.slice(-5).map(it => it.track.artists.map(a => a.name).join(', ') + ' - ' + it.track.name);
+        return { history, recentNames, recentPlayed };
       } catch (e) {
-        return { history: [], recentNames: [] };
+        return { history: [], recentNames: [], recentPlayed: [] };
+      }
+    },
+
+    // Spotify's actual live queue -- ground truth for "already queued" that
+    // beats our own local nocturne_suggestions log, since it reflects
+    // whatever's really on the device (including anything queued by a
+    // different browser/session, not just this one).
+    async getQueue(token) {
+      try {
+        const res = await fetch('https://api.spotify.com/v1/me/player/queue', {
+          headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        const items = Array.isArray(data.queue) ? data.queue : [];
+        return items.map(it => ({ title: it.name, artist: (it.artists || []).map(a => a.name).join(', ') }));
+      } catch (e) {
+        return [];
       }
     },
 
@@ -327,7 +357,15 @@ const MUSIC_PROVIDERS = {
     // YouTube/YouTube Music (only channel-owner analytics do) -- degrade
     // gracefully rather than pretend to have data we don't.
     async getRecentlyPlayed() {
-      return { history: [], recentNames: [] };
+      return { history: [], recentNames: [], recentPlayed: [] };
+    },
+
+    // No device queue to read either -- the "Nocturne DJ Queue" playlist is
+    // the closest analog, but reading it back isn't wired up (queueTrack is
+    // append-only today); the local nocturne_suggestions log is what backs
+    // the don't-repeat-songs guard for this provider instead.
+    async getQueue() {
+      return [];
     },
 
     async getAudioFeatures() {
@@ -472,14 +510,23 @@ const MUSIC_PROVIDERS = {
     async getRecentlyPlayed() {
       try {
         const music = window.MusicKit && MusicKit.getInstance();
-        if (!music) return { history: [], recentNames: [] };
+        if (!music) return { history: [], recentNames: [], recentPlayed: [] };
         const res = await music.api.music('/v1/me/recent/played/tracks', { limit: 5 });
         const items = ((res && res.data && res.data.data) || []).slice().reverse();
-        const recentNames = items.map(it => ((it.attributes || {}).artistName || '') + ' - ' + ((it.attributes || {}).name || ''));
-        return { history: recentNames.slice(), recentNames };
+        const recentPlayed = items.map(it => ({ title: (it.attributes || {}).name || '', artist: (it.attributes || {}).artistName || '' }));
+        const recentNames = recentPlayed.map(t => t.artist + ' - ' + t.title);
+        return { history: recentNames.slice(), recentNames, recentPlayed };
       } catch (e) {
-        return { history: [], recentNames: [] };
+        return { history: [], recentNames: [], recentPlayed: [] };
       }
+    },
+
+    // MusicKit's queue is readable (music.queue.items) but reading it back
+    // for the dedup guard isn't wired up while this provider stays dormant
+    // (no Apple Developer credentials to test against yet) -- the local
+    // nocturne_suggestions log backs the don't-repeat-songs guard instead.
+    async getQueue() {
+      return [];
     },
 
     async getAudioFeatures() {
@@ -562,10 +609,11 @@ const MUSIC_PROVIDERS = {
   }
 };
 
-// "Matuê, Teto" -> ['matue', 'teto']. Strips accents/punctuation so the
-// comparison survives the LLM spelling names without diacritics.
-function normalizeArtist(name) {
-  return String(name || '')
+// Strips accents/punctuation and lowercases so comparisons survive the LLM
+// or a provider's API spelling/capitalizing things differently ("Numb" vs
+// "numb", "Matuê" vs "Matue").
+function normalizeForKey(text) {
+  return String(text || '')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .replace(/[^a-z0-9 ]/gi, '')
@@ -573,16 +621,12 @@ function normalizeArtist(name) {
     .toLowerCase();
 }
 
-function splitArtists(input) {
-  const str = Array.isArray(input) ? input.join(', ') : String(input || '');
-  return str
-    .split(/,|&|\bfeat\.?\b|\bft\.?\b/i)
-    .map(normalizeArtist)
-    .filter(Boolean);
-}
-
-function sharesArtist(a, b) {
-  return a.some(x => b.includes(x));
+// Identifies one specific song (title + artist), not just an artist --
+// repeating the artist who's currently playing is fine and often desirable
+// (see NO REPEAT in api/groq.js's system prompt); repeating the exact same
+// song is what this app actually guards against.
+function trackKey(title, artist) {
+  return normalizeForKey(title) + '::' + normalizeForKey(artist);
 }
 
 class Component extends DCLogic {
@@ -902,7 +946,13 @@ class Component extends DCLogic {
 
   fetchAudioFeatures = (trackId) => this.activeProvider.getAudioFeatures(this.state.accessToken, trackId);
 
-  // ponytail: localStorage feedback log, no backend — good enough for a single-user app.
+  // localStorage log, no backend — good enough for a single-user app. Does
+  // double duty: getFeedbackSummary below reads the last few entries as soft
+  // signal for the AI (liked/skipped), and triggerDJ's playedKeys guard reads
+  // the whole thing as a hard "never queue this exact song again" list. 2000
+  // entries comfortably covers a full overnight session (TARGET_QUEUED=3 per
+  // trigger, a trigger roughly every few minutes) and is trivial in size for
+  // localStorage (each entry is a few dozen bytes of JSON).
   loadSuggestionLog = () => {
     try {
       return JSON.parse(localStorage.getItem('nocturne_suggestions') || '[]');
@@ -912,7 +962,7 @@ class Component extends DCLogic {
   };
 
   saveSuggestionLog = (log) => {
-    localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-30)));
+    localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-2000)));
   };
 
   recordSuggestion = (title, artist) => {
@@ -938,6 +988,8 @@ class Component extends DCLogic {
 
   fetchTopGenres = () => this.activeProvider.getTopGenres(this.state.accessToken);
 
+  fetchQueue = () => this.activeProvider.getQueue(this.state.accessToken);
+
   triggerDJ = async (track, customPrompt) => {
     const provider = this.activeProvider;
     this.setState({ isThinking: true });
@@ -947,14 +999,16 @@ class Component extends DCLogic {
       this.addLog('> My Turn: ' + customPrompt);
     }
     const mode = MODES[this.state.activeMode] || MODES.default;
-    const [genres, historyData, topGenres, audioFeatures] = await Promise.all([
+    const [genres, historyData, topGenres, audioFeatures, queueItems] = await Promise.all([
       track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
       this.fetchRecentHistory(),
       this.fetchTopGenres(),
-      track ? this.fetchAudioFeatures(track.id) : Promise.resolve(null)
+      track ? this.fetchAudioFeatures(track.id) : Promise.resolve(null),
+      this.fetchQueue()
     ]);
-    const { history, recentNames } = historyData;
+    const { history, recentNames, recentPlayed } = historyData;
     const feedback = this.getFeedbackSummary(recentNames);
+    if (queueItems.length) this.addLog('> ' + provider.label + ' queue has ' + queueItems.length + ' track(s) already.');
     if (genres.length) this.addLog('> Confirmed ' + provider.label + ' genres: ' + genres.join(', '));
     if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
     if (audioFeatures && typeof audioFeatures.tempo === 'number') {
@@ -962,6 +1016,33 @@ class Component extends DCLogic {
       this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM' + energyStr);
     }
     if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
+
+    // Hard guard against repeating an exact SONG (not artist -- suggesting a
+    // different song by the artist that's currently playing is fine and
+    // often desirable, see NO REPEAT in api/groq.js's system prompt). Built
+    // from four sources, all normalized to the same title+artist key: every
+    // song ever queued in this browser (loadSuggestionLog, retained for the
+    // last 2000 -- see saveSuggestionLog), the currently-playing track,
+    // everything actually played in the last 4h per the provider's real
+    // history (recentPlayed -- authoritative, not just our own memory), and
+    // whatever's already sitting in the provider's real live queue
+    // (queueItems). avoidLabels is the same set in human-readable form,
+    // capped at 40, sent to Groq so it avoids these in the first place
+    // instead of relying entirely on this guard to filter them out after the fact.
+    const playedKeys = new Set();
+    const avoidLabels = [];
+    const markPlayed = (title, artist) => {
+      if (!title || !artist) return;
+      const key = trackKey(title, artist);
+      if (playedKeys.has(key)) return;
+      playedKeys.add(key);
+      if (avoidLabels.length < 40) avoidLabels.push(artist + ' - ' + title);
+    };
+    this.loadSuggestionLog().forEach(e => markPlayed(e.title, e.artist));
+    if (track) markPlayed(track.name, track.artists);
+    (recentPlayed || []).forEach(rp => markPlayed(rp.title, rp.artist));
+    (queueItems || []).forEach(q => markPlayed(q.title, q.artist));
+
     try {
       const groqRes = await fetch('/api/groq', {
         method: 'POST',
@@ -974,6 +1055,7 @@ class Component extends DCLogic {
           topGenres,
           audioFeatures,
           feedback,
+          avoidList: avoidLabels,
           mode: mode.label + ': ' + mode.vibe,
           customPrompt: customPrompt || ''
         })
@@ -993,30 +1075,27 @@ class Component extends DCLogic {
       }
       const TARGET_QUEUED = 3;
       let queuedCount = 0;
-      // Hard guard: the LLM sometimes ignores the no-repeat rule, and the artist
-      // fallback would then resolve it into the currently playing artist.
-      const currentArtists = splitArtists(track ? track.artists : '');
       for (const sug of candidates) {
         if (queuedCount >= TARGET_QUEUED) break;
-        if (sharesArtist(splitArtists(sug.artist), currentArtists)) {
-          this.addLog('> Skipping "' + sug.title + '" — ' + sug.artist + ' is the currently playing artist.');
-          continue;
-        }
         const resolved = await this.resolveTrack(sug.title, sug.artist);
         if (!resolved) {
           this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on ' + provider.label + ', and no tracks found for that artist — skipping.');
           continue;
         }
-        const resolvedArtists = splitArtists(resolved.track.artists.map(a => a.name));
-        if (sharesArtist(resolvedArtists, currentArtists)) {
-          this.addLog('> Skipping "' + resolved.track.name + '" — resolved to the currently playing artist.');
+        const resolvedArtistNames = resolved.track.artists.map(a => a.name).join(', ');
+        const key = trackKey(resolved.track.name, resolvedArtistNames);
+        if (playedKeys.has(key)) {
+          this.addLog('> Skipping "' + resolved.track.name + '" — already played or queued before.');
           continue;
         }
         if (resolved.fellBack) {
           this.addLog('> "' + sug.title + '" appears hallucinated — falling back to top track by ' + sug.artist + '.');
         }
         const ok = await this.queueTrack(resolved.track, sug.why);
-        if (ok) queuedCount++;
+        if (ok) {
+          queuedCount++;
+          playedKeys.add(key);
+        }
       }
       if (queuedCount === 0) {
         this.addLog('> None of the AI\'s suggestions could be verified on ' + provider.label + '.');
