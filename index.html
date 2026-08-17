@@ -301,9 +301,10 @@ class Component extends DCLogic {
   };
 
   selectMode = (modeId) => {
-    this.setState(s => ({ activeMode: s.activeMode === modeId ? null : modeId }));
+    const isClearing = this.state.activeMode === modeId;
+    this.setState({ activeMode: isClearing ? null : modeId });
     this.lastTriggeredId = null;
-    this.addLog(this.state.activeMode === modeId ? '> Mode cleared.' : '> Mode set to ' + MODES[modeId].label + '.');
+    this.addLog(isClearing ? '> Mode cleared.' : '> Mode set to ' + MODES[modeId].label + '.');
   };
 
   updateMyTurnDraft = (e) => this.setState({ myTurnDraft: e.target.value });
