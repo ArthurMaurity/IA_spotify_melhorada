@@ -1,76 +1,87 @@
-# Spotify Flow & Queue Manager (AI DJ)
+# Nocturne DJ
 
-Intelligent Spotify queue manager. It reads what you just listened to, asks Gemini
-for tracks that bridge smoothly from it (no abrupt genre/tempo/energy jumps), and
-injects them straight into your Spotify queue.
+An AI co-pilot for your Spotify queue. Connect your account and it listens for
+the right moment to line up what plays next — matching the concrete genre,
+tempo and energy of what you're already hearing instead of generic picks.
 
-Lightweight by design — no background DataFrames, small prompts, single-threaded
-polling — so it runs fine in Termux or a cheap cloud box.
+Single-page app (`index.html` + `support.js`) backed by one Vercel serverless
+function (`api/groq.js`) that keeps the Groq API key off the client.
 
-## Modules
+## Architecture
 
-| File | Responsibility |
+| Path | Responsibility |
 | --- | --- |
-| `config.py` | Loads `.env`, validates keys, exposes execution parameters |
-| `spotify_client.py` | OAuth, `currently_playing`, `recently_played`, `add_to_queue` |
-| `ai_engine.py` | Gemini prompt enforcing the Golden Rule of Sequencing |
-| `data_logger.py` | CSV + `.txt` session log + optional Google Sheets sync |
-| `main.py` | Terminal UI and the two operation modes |
+| `index.html` | The whole app: Spotify auth (PKCE), playback polling, DJ Mode, My Turn, queueing |
+| `support.js` | Generated runtime that renders `index.html`'s template — **do not edit**, rebuilt from tooling |
+| `api/groq.js` | Vercel serverless function. Holds `GROQ_API_KEY` server-side, calls the Groq chat completions API, returns clean track JSON |
+| `vercel.json` | Static hosting config (`framework: null` — no Vite/other preset, no rewrites needed beyond serving the files as-is) |
 
-## Install
+Nothing runs server-side except that one function — there's no database, no
+build step, no bundler for the app itself.
+
+## How a suggestion gets made
+
+1. The browser polls `GET /v1/me/player/currently-playing` every 15s.
+2. Once the track passes 66% (DJ Mode) or you hit **Suggest now** (My Turn),
+   it gathers grounding data directly from Spotify:
+   - `GET /v1/artists/{id}` → the current artist's confirmed genres
+   - `GET /v1/me/player/recently-played` → last 5 tracks, as a timeline
+   - `GET /v1/me/top/artists` → your overall top genres (tiebreaker only)
+3. All of that plus the track name/artist and selected mode/instruction goes
+   to `POST /api/groq`, which asks Groq (`llama-3.3-70b-versatile`) for 6
+   ranked candidate songs, grounded in the real genre data rather than the
+   model's own guess.
+4. The browser resolves each candidate against `GET /v1/search` and queues
+   the first 3 that actually exist on Spotify — candidates that don't
+   resolve are logged and skipped instead of wasting a slot.
+
+## Local development
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env      # then fill it in
-python main.py
+npm install -g vercel   # if you don't have it
+vercel dev
 ```
 
-Python 3.10+.
+Needs a `.env` (gitignored) with:
 
-## Configuration
+```
+GROQ_API_KEY=gsk_...
+VITE_SPOTIFY_CLIENT_ID=<your Spotify app's Client ID>
+```
 
-1. **Spotify** — create an app at <https://developer.spotify.com/dashboard>, add
-   `http://127.0.0.1:8888/callback` as a Redirect URI, and copy the Client ID/Secret
-   into `.env`. On first run the app prints an authorization URL; open it, approve,
-   and paste the URL you land on back into the terminal. The token is cached in
-   `.cache-spotify` and refreshed automatically afterwards.
-2. **Gemini** — get a free key at <https://aistudio.google.com/apikey>.
-3. **Google Sheets (optional)** — set `SHEETS_ENABLED=true`, drop a service-account
-   JSON at `GOOGLE_CREDENTIALS_FILE`, and share the target spreadsheet with the
-   service account's email. If it fails, logging silently falls back to CSV only.
+## Deploying
 
-Tunables in `.env`: `POLL_INTERVAL`, `INJECT_THRESHOLD` (0.66 = final third),
-`CONTEXT_SIZE`, `TRACKS_PER_INJECTION`.
+1. Import the repo at <https://vercel.com/new>. Framework Preset: **Other**.
+2. Add the same two env vars in Project Settings → Environment Variables —
+   `.env` is local-only and never gets deployed.
+3. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard),
+   under your app's Settings → Redirect URIs, add the deployed URL exactly as
+   the browser will send it: `https://<your-domain>/` (HTTPS, trailing slash).
+   Spotify no longer accepts `http://localhost` reliably for every app, so
+   testing against the real deployed domain is the path of least resistance.
 
-## Modes
+## Auth notes
 
-**1 — Radio Mode.** Polls playback every `POLL_INTERVAL` seconds. Once the current
-track passes `INJECT_THRESHOLD`, it sends the last `CONTEXT_SIZE` tracks to Gemini
-and queues `TRACKS_PER_INJECTION` suggestions. Fires at most once per track.
+- Uses Authorization Code + PKCE (`response_type=code`), not the deprecated
+  Implicit Grant (`response_type=token`) — Spotify stopped accepting the
+  latter for all apps.
+- Scopes requested: `user-read-currently-playing`, `user-read-playback-state`,
+  `user-modify-playback-state`, `user-read-recently-played`, `user-top-read`.
+  If you add a scope later, existing sessions won't have it — click
+  Disconnect then Connect to Spotify again to re-consent.
+- Tokens live in `sessionStorage`, not `localStorage` — closing the tab ends
+  the session.
+- Requires an **active playback device**: start playing something in the
+  Spotify app first, otherwise queue writes have nowhere to go.
 
-**2 — My Turn Mode.** You type an intention (e.g. *"smooth transition from rap to
-something calmer"*) and it builds a gradual sequence from your current context.
+## Known limitations
 
-Spotify requires an **active playback device** — start playing something in the
-Spotify app first, otherwise queue writes have nowhere to go.
-
-## Output
-
-- `history.csv` — one row per recommendation (context, suggestion, justification,
-  whether it was queued, AI latency).
-- `session_log.txt` — human-readable session summary.
-- Google Sheets — same rows, when enabled.
-
-Empty or missing fields are written as `0` rather than blank, so no row is ever
-lost during analysis. `DataLogger.load_history()` returns the CSV as a
-null-filled pandas DataFrame.
-
-## Notes
-
-- Uses the current `google-genai` SDK; the older `google-generativeai` package is
-  end-of-life.
-- Track suggestions come from Gemini by name and are resolved via Spotify search,
-  so the app does not depend on Spotify's deprecated `recommendations` /
-  `audio-features` endpoints (unavailable to apps created after Nov 2024).
-- Network drops and token expiry are retried once and then skipped — the loop
-  never crashes.
+- Groq is a text model with no live internet access — it can still invent a
+  plausible-sounding song that doesn't exist. The app buffers for this (asks
+  for 6 candidates, verifies each on Spotify, keeps the first 3 real ones)
+  but can't eliminate it entirely.
+- `GET /v1/artists/{id}` (genres) is unrestricted, but Spotify locked down
+  `recommendations` and `audio-features` for apps created after Nov 2024 —
+  this app never relies on either, by design.
+- Artists with no genre tagged on Spotify (small/niche/very new) fall back to
+  the model's own knowledge, which is where quality drops the most.
