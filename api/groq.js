@@ -2,16 +2,50 @@
 // Keeps the Groq API key server-side; the browser never sees it.
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// Groq periodically retires models (llama-3.3-70b-versatile and
-// llama-3.1-70b-versatile have both been pulled from the catalog), so we try a
-// chain of candidates and fall back automatically instead of hard-failing
-// whenever the primary model is gone or decommissioned.
-const GROQ_MODELS = [...new Set([
-  process.env.GROQ_MODEL,
-  'llama3-70b-8192',
-  'llama3-8b-8192',
-  'mixtral-8x7b-32768',
-].filter(Boolean))];
+const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
+
+// Groq has repeatedly retired entire model families with no notice (llama-3.3
+// and llama-3.1 70b, then the whole llama3-70b/8b + mixtral fallback list all
+// got decommissioned within the same second). Hardcoded model IDs will always
+// eventually rot, so instead we ask Groq's own catalog which chat models are
+// currently live and pick one at request time. The answer is cached at module
+// scope so a warm serverless instance reuses it instead of listing models on
+// every request — only a cold start (or a decommissioned cache hit) re-fetches.
+let cachedModelId = null;
+
+function pickChatModel(models) {
+  const candidates = models.filter((m) => {
+    const id = String(m.id || '').toLowerCase();
+    return (id.includes('llama') || id.includes('mixtral'))
+      && !id.includes('vision')
+      && !id.includes('tool');
+  });
+  candidates.sort((a, b) => (b.context_window || 0) - (a.context_window || 0));
+  return candidates[0]?.id || null;
+}
+
+async function discoverModel(apiKey) {
+  const res = await fetch(GROQ_MODELS_URL, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to list Groq models: ${await res.text()}`);
+  }
+  const data = await res.json();
+  const modelId = pickChatModel(Array.isArray(data.data) ? data.data : []);
+  if (!modelId) {
+    throw new Error('No active Groq chat model found in the models list');
+  }
+  return modelId;
+}
+
+async function getActiveModel(apiKey, forceRefresh) {
+  if (!cachedModelId || forceRefresh) {
+    cachedModelId = await discoverModel(apiKey);
+    console.warn(`Discovered active Groq model: ${cachedModelId}`);
+  }
+  return cachedModelId;
+}
 
 const SYSTEM_PROMPT = [
   'You are an expert DJ specialized in seamless transitions, with deep knowledge of genres, subgenres, tempo (BPM) and production style across music history.',
@@ -90,25 +124,43 @@ function extractJson(text) {
   }
 }
 
-async function callGroqWithFallback(apiKey, messages) {
-  let lastError = null;
+function isInvalidModelResponse(status, errText) {
+  return status === 404
+    || status === 400
+    || /not found|does not exist|decommissioned/i.test(errText);
+}
 
-  for (const model of GROQ_MODELS) {
+async function requestCompletion(apiKey, model, messages) {
+  return fetch(GROQ_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.4,
+      response_format: { type: 'json_object' },
+      messages,
+    }),
+  });
+}
+
+async function callGroqWithFallback(apiKey, messages) {
+  const envModel = process.env.GROQ_MODEL;
+  const candidates = [...new Set([envModel, await getActiveModel(apiKey)].filter(Boolean))];
+  const tried = new Set();
+  let lastError = null;
+  let refreshedOnce = false;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i];
+    if (tried.has(model)) continue;
+    tried.add(model);
+
     let groqRes;
     try {
-      groqRes = await fetch(GROQ_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.4,
-          response_format: { type: 'json_object' },
-          messages,
-        }),
-      });
+      groqRes = await requestCompletion(apiKey, model, messages);
     } catch (err) {
       // Network-level failure (timeout, DNS, etc.) — not a model problem, surface it immediately.
       throw err;
@@ -119,13 +171,18 @@ async function callGroqWithFallback(apiKey, messages) {
     }
 
     const errText = await groqRes.text();
-    const isInvalidModel = groqRes.status === 404
-      || groqRes.status === 400
-      || /not found|does not exist|decommissioned/i.test(errText);
-
-    if (isInvalidModel) {
+    if (isInvalidModelResponse(groqRes.status, errText)) {
       console.warn(`Model ${model} not found, falling back to next...`);
       lastError = new Error(`Groq request failed for model ${model}: ${errText}`);
+      if (model === cachedModelId) cachedModelId = null;
+
+      // Every known candidate is dead — re-list Groq's catalog once in case a
+      // new model appeared since our cache was populated, and keep going.
+      if (i === candidates.length - 1 && !refreshedOnce) {
+        refreshedOnce = true;
+        const fresh = await getActiveModel(apiKey, true);
+        if (!tried.has(fresh)) candidates.push(fresh);
+      }
       continue;
     }
 
