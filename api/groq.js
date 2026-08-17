@@ -2,12 +2,13 @@
 // Keeps the Groq API key server-side; the browser never sees it.
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// Groq periodically retires models (llama-3.3-70b-versatile was pulled from the
-// catalog), so we try a chain of candidates and fall back automatically instead
-// of hard-failing with a 404/model_not_found whenever the primary model is gone.
+// Groq periodically retires models (llama-3.3-70b-versatile and
+// llama-3.1-70b-versatile have both been pulled from the catalog), so we try a
+// chain of candidates and fall back automatically instead of hard-failing
+// whenever the primary model is gone or decommissioned.
 const GROQ_MODELS = [...new Set([
   process.env.GROQ_MODEL,
-  'llama-3.1-70b-versatile',
+  'llama3-70b-8192',
   'llama3-8b-8192',
   'mixtral-8x7b-32768',
 ].filter(Boolean))];
@@ -119,8 +120,8 @@ async function callGroqWithFallback(apiKey, messages) {
 
     const errText = await groqRes.text();
     const isInvalidModel = groqRes.status === 404
-      || /model_not_found/i.test(errText)
-      || /does not exist/i.test(errText);
+      || groqRes.status === 400
+      || /not found|does not exist|decommissioned/i.test(errText);
 
     if (isInvalidModel) {
       console.warn(`Model ${model} not found, falling back to next...`);
