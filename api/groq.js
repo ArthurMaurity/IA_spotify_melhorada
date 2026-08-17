@@ -2,17 +2,15 @@
 // Keeps the Groq API key server-side; the browser never sees it.
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// 70b has far deeper knowledge of specific artists/subgenres than the 8b-instant
-// tier, which tended to fall back to generic mainstream picks. Groq periodically
-// retires models, so we try a chain of candidates and fall back automatically
-// instead of hard-failing with a 404 whenever the primary model is deprecated.
-const GROQ_MODELS = [
+// Groq periodically retires models (llama-3.3-70b-versatile was pulled from the
+// catalog), so we try a chain of candidates and fall back automatically instead
+// of hard-failing with a 404/model_not_found whenever the primary model is gone.
+const GROQ_MODELS = [...new Set([
   process.env.GROQ_MODEL,
-  'llama-3.3-70b-versatile',
   'llama-3.1-70b-versatile',
   'llama3-8b-8192',
   'mixtral-8x7b-32768',
-].filter(Boolean);
+].filter(Boolean))];
 
 const SYSTEM_PROMPT = [
   'You are an expert DJ specialized in seamless transitions, with deep knowledge of genres, subgenres, tempo (BPM) and production style across music history.',
@@ -120,10 +118,12 @@ async function callGroqWithFallback(apiKey, messages) {
     }
 
     const errText = await groqRes.text();
-    const isInvalidModel = groqRes.status === 404 || /does not exist/i.test(errText);
+    const isInvalidModel = groqRes.status === 404
+      || /model_not_found/i.test(errText)
+      || /does not exist/i.test(errText);
 
     if (isInvalidModel) {
-      console.warn(`Model ${model} failed, trying next...`);
+      console.warn(`Model ${model} not found, falling back to next...`);
       lastError = new Error(`Groq request failed for model ${model}: ${errText}`);
       continue;
     }
