@@ -13,14 +13,26 @@ const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
 // every request — only a cold start (or a decommissioned cache hit) re-fetches.
 let cachedModelId = null;
 
+const PREFERRED_TAGS = ['versatile', 'instruct', 'chat'];
+
 function pickChatModel(models) {
+  // 'guard' models (e.g. llama-prompt-guard-2-86m) are tiny safety classifiers,
+  // not conversational LLMs — they choke on our full DJ prompt with a context
+  // length error, so they must never be picked as the chat model.
   const candidates = models.filter((m) => {
     const id = String(m.id || '').toLowerCase();
     return (id.includes('llama') || id.includes('mixtral'))
       && !id.includes('vision')
-      && !id.includes('tool');
+      && !id.includes('tool')
+      && !id.includes('guard');
   });
-  candidates.sort((a, b) => (b.context_window || 0) - (a.context_window || 0));
+  candidates.sort((a, b) => {
+    const windowDiff = (b.context_window || 0) - (a.context_window || 0);
+    if (windowDiff !== 0) return windowDiff;
+    const aPreferred = PREFERRED_TAGS.some((tag) => String(a.id || '').toLowerCase().includes(tag));
+    const bPreferred = PREFERRED_TAGS.some((tag) => String(b.id || '').toLowerCase().includes(tag));
+    return (bPreferred ? 1 : 0) - (aPreferred ? 1 : 0);
+  });
   return candidates[0]?.id || null;
 }
 
