@@ -52,12 +52,19 @@ The UI shows a capability note for YouTube/Apple once connected.
    player state; YouTube: not available, see above).
 2. Once the track passes 66% (DJ Mode) or you hit **Suggest now** (My Turn),
    it gathers whatever grounding data the provider can offer: confirmed
-   genres for the artist, last-5 recently-played tracks, overall top genres.
+   genres for the artist, last-5 recently-played tracks, overall top genres,
+   and (Spotify only) the listener's own top tracks/artists from the last
+   ~6 months (`GET /v1/me/top/tracks` + `/v1/me/top/artists`, `user-top-read`
+   scope). That top-tracks data does two things: it lets Groq suggest a
+   deeper cut by an artist the listener demonstrably already knows instead
+   of only ever the single most obvious hit, and it gives Groq a more
+   concrete, personal signal for genre/style matching than the 8 aggregated
+   genre tags alone.
 3. All of that plus the track name/artist and selected mode/instruction goes
    to `POST /api/groq`, which discovers a currently-live Groq chat model at
    request time (never hardcoded — see `api/groq.js`) and asks it for 10-12
-   ranked candidate songs, grounded in the real genre data rather than the
-   model's own guess.
+   ranked candidate songs, grounded in the real genre and listening data
+   rather than the model's own guess.
 4. The browser resolves each candidate against the provider's search and
    queues the first 3 that actually exist — candidates that don't resolve
    are logged and skipped instead of wasting a slot.
@@ -191,3 +198,14 @@ verification entirely.
   fallback picks by, unlike Spotify's `popularity` or YouTube's view counts.
 - Artists with no genre tagged (small/niche/very new, or any YouTube session)
   fall back to the model's own knowledge, which is where quality drops the most.
+- Genre/style matching has no numeric grounding anymore (see the
+  `audio-features` lockout above) — it relies entirely on text genre tags
+  plus the listener's own top-tracks/top-artists data, not a measured
+  tempo/energy number. That can still miss nuance a BPM value would have
+  caught; it's a real ceiling on how tight the genre match can get, not
+  something the app can code around while Spotify keeps that endpoint locked.
+- The top-tracks/top-artists personalization above only works for Spotify.
+  YouTube has no equivalent listening-history API at all. Apple Music's
+  MusicKit exposes a "heavy rotation" endpoint used as a stand-in, but it's
+  untested against live data since Apple Music is currently dormant (see
+  "Provider capabilities").
