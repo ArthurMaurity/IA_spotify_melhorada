@@ -15,17 +15,28 @@ let cachedModelId = null;
 
 const PREFERRED_TAGS = ['versatile', 'instruct', 'chat'];
 
+// Deny-list, not allow-list. An allow-list keyed to vendor names (llama,
+// mixtral, ...) breaks completely every time Groq reshuffles which vendors
+// they host — which has already happened twice (llama-3.3/3.1 decommissioned,
+// then the entire llama3/mixtral fallback chain vanished in favor of
+// openai/gpt-oss, qwen, groq/compound, allam-2-7b). Excluding known
+// non-chat/unsafe categories survives vendor churn; only the categories
+// below need to ever be revisited.
+const EXCLUDED_PATTERNS = [
+  'vision',    // image-input models — can't handle our text-only prompt shape
+  'tool',      // tool-use-tuned variants — quirky with plain json_object mode
+  'guard',     // safety/moderation classifiers (e.g. llama-prompt-guard-2-*)
+  'safeguard', // same category as 'guard', different naming (gpt-oss-safeguard-*)
+  'whisper',   // speech-to-text, not a chat model
+  'tts',       // text-to-speech
+  'orpheus',   // Canopy Labs TTS models
+  'compound',  // Groq's agentic tool-router systems — unpredictable with strict JSON output
+];
+
 function pickChatModel(models) {
-  // 'guard' models (e.g. meta-llama/llama-prompt-guard-2-22m/86m) are tiny
-  // safety/moderation classifiers, not conversational LLMs — they don't
-  // support json_object response_format and choke on our full DJ prompt, so
-  // they must never be picked as the chat model, regardless of vendor prefix.
   const candidates = models.filter((m) => {
     const id = String(m.id || '').toLowerCase();
-    if (id.includes('guard')) return false;
-    if (id.includes('vision')) return false;
-    if (id.includes('tool')) return false;
-    return id.includes('llama') || id.includes('mixtral');
+    return !EXCLUDED_PATTERNS.some((pattern) => id.includes(pattern));
   });
   candidates.sort((a, b) => {
     const windowDiff = (b.context_window || 0) - (a.context_window || 0);
@@ -54,7 +65,7 @@ async function discoverModel(apiKey) {
 
 function isBannedModel(id) {
   const lower = String(id || '').toLowerCase();
-  return lower.includes('guard') || lower.includes('vision') || lower.includes('tool');
+  return EXCLUDED_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
 async function getActiveModel(apiKey, forceRefresh) {
