@@ -1,8 +1,30 @@
 // Vercel Serverless Function — POST /api/groq
 // Keeps the Groq API key server-side; the browser never sees it.
 
+const { enforceRateLimit } = require('./_ratelimit');
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
+
+// GROQ_API_KEY sits behind this endpoint with no auth, so anyone who finds the
+// deployed URL could otherwise drain the free-tier quota in a loop. 12/min is
+// far above real use (DJ Mode fires at most ~4/min per listener, and only one
+// Groq call per trigger) while still capping a runaway script. See
+// _ratelimit.js on why this is best-effort rather than a true global limit.
+const RATE_LIMIT_PER_MIN = 12;
+
+// A model that passes the filters can still fail per-request, so we walk the
+// ranked list — but walking ALL of it on a systemic outage (bad key, Groq
+// down) means one request fans out into dozens of upstream calls, burning
+// serverless execution time to arrive at the same failure. Cap the walk.
+const MAX_MODEL_ATTEMPTS = 4;
+
+// Groq reshuffles its catalog without notice, so a warm instance holding a
+// months-old ranked list is a real failure mode: every model in it can be
+// decommissioned at once, and the only thing that rediscovers the catalog is
+// the exhausted-all-candidates path — i.e. after every model has already
+// failed. Expiring the cache turns that into a cheap periodic refresh.
+const MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Groq has repeatedly retired entire model families with no notice (llama-3.3
 // and llama-3.1 70b, then the whole llama3-70b/8b + mixtral fallback list all
@@ -17,6 +39,7 @@ const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
 // Keeping the full list lets the fallback loop walk to the next-best model
 // instead of looping on one bad pick.
 let cachedModelList = null;
+let cachedModelListAt = 0;
 
 const PREFERRED_TAGS = ['versatile', 'instruct', 'chat'];
 
@@ -78,11 +101,24 @@ async function getModelCandidates(apiKey, forceRefresh) {
   if (cachedModelList) {
     cachedModelList = cachedModelList.filter((id) => !isBannedModel(id));
   }
-  if (!cachedModelList || !cachedModelList.length || forceRefresh) {
+  const expired = Date.now() - cachedModelListAt > MODEL_CACHE_TTL_MS;
+  if (!cachedModelList || !cachedModelList.length || forceRefresh || expired) {
     cachedModelList = await discoverModelList(apiKey);
+    cachedModelListAt = Date.now();
     console.warn(`Discovered Groq chat models (best-first): ${cachedModelList.join(', ')}`);
   }
   return cachedModelList;
+}
+
+// Read-only view for /api/health — never triggers a catalog fetch, so hitting
+// the health endpoint can't itself burn quota or mutate the cache.
+function peekModelCache() {
+  return {
+    models: cachedModelList ? [...cachedModelList] : [],
+    cachedAt: cachedModelListAt || null,
+    ageMs: cachedModelListAt ? Date.now() - cachedModelListAt : null,
+    ttlMs: MODEL_CACHE_TTL_MS,
+  };
 }
 
 const SYSTEM_PROMPT = [
@@ -222,17 +258,33 @@ async function requestCompletion(apiKey, model, messages) {
   });
 }
 
+// Resolves to { data, model, attempts, fallbacks } rather than the bare Groq
+// payload, so the handler can report which model actually answered. Without
+// that, a silently degrading catalog (top pick always failing, every request
+// quietly served by the 3rd fallback) is invisible from the outside.
 async function callGroqWithFallback(apiKey, messages) {
   const envModel = process.env.GROQ_MODEL;
   const ranked = await getModelCandidates(apiKey);
   const candidates = [...new Set([envModel, ...ranked].filter(Boolean))];
   const tried = new Set();
+  const fallbacks = [];
   let lastError = null;
   let refreshedOnce = false;
 
   for (let i = 0; i < candidates.length; i++) {
     const model = candidates[i];
     if (tried.has(model)) continue;
+
+    // Stop walking once we've genuinely tried MAX_MODEL_ATTEMPTS distinct
+    // models. On a systemic failure (revoked key, Groq outage) every candidate
+    // fails identically, and walking a 15-model catalog turns one client
+    // request into 15 upstream calls — slow, and pure waste of the execution
+    // budget to reach the same error. Four attempts still clears the real
+    // case this loop exists for (one or two decommissioned models).
+    if (tried.size >= MAX_MODEL_ATTEMPTS) {
+      console.warn(`Giving up after ${tried.size} model attempts.`);
+      break;
+    }
     tried.add(model);
 
     let groqRes;
@@ -247,13 +299,18 @@ async function callGroqWithFallback(apiKey, messages) {
       // This model actually works for real requests — promote it to the front
       // of the cache so future calls try it first instead of a flakier one
       // that merely ranked higher on paper (context window, name tags).
-      cachedModelList = [model, ...ranked.filter((id) => id !== model)];
-      return groqRes.json();
+      // Rebuild from `candidates` rather than the `ranked` snapshot taken
+      // before the loop: if the catalog was re-listed mid-loop below, `ranked`
+      // is the stale pre-refresh list, and rebuilding from it would discard
+      // every newly discovered model except the one that just succeeded.
+      cachedModelList = [model, ...candidates.filter((id) => id !== model && !isBannedModel(id))];
+      return { data: await groqRes.json(), model, attempts: tried.size, fallbacks };
     }
 
     const errText = await groqRes.text();
     if (isInvalidModelResponse(groqRes.status, errText)) {
       console.warn(`Model ${model} failed (${groqRes.status}), falling back to next...`);
+      fallbacks.push({ model, status: groqRes.status });
       lastError = new Error(`Groq request failed for model ${model}: ${errText}`);
 
       // Every known candidate has failed — re-list Groq's catalog once in case
@@ -281,6 +338,10 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Before touching the API key or Groq itself, so a flooder costs us nothing
+  // beyond the function invocation that already happened.
+  if (enforceRateLimit(req, res, 'groq', RATE_LIMIT_PER_MIN)) return;
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
@@ -288,8 +349,9 @@ module.exports = async function handler(req, res) {
 
   const { track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, mode, customPrompt } = req.body || {};
 
+  const startedAt = Date.now();
   try {
-    const data = await callGroqWithFallback(apiKey, [
+    const { data, model, attempts, fallbacks } = await callGroqWithFallback(apiKey, [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, mode, customPrompt }) },
     ]);
@@ -298,7 +360,7 @@ module.exports = async function handler(req, res) {
     const parsed = extractJson(rawText);
 
     if (!parsed || !Array.isArray(parsed.tracks) || parsed.tracks.length === 0) {
-      return res.status(502).json({ error: 'Groq response could not be parsed as track JSON', raw: rawText });
+      return res.status(502).json({ error: 'Groq response could not be parsed as track JSON', raw: rawText, model });
     }
 
     const tracks = parsed.tracks
@@ -310,8 +372,37 @@ module.exports = async function handler(req, res) {
         why: t.why ? String(t.why).trim() : '',
       }));
 
-    return res.status(200).json({ tracks });
+    // `meta` is purely diagnostic — the client renders nothing from it beyond
+    // an optional log line, so older clients that ignore it keep working.
+    // It's what makes silent degradation visible: if `fallbacks` is non-empty
+    // on every request, the top-ranked model is broken and nobody would
+    // otherwise notice, because the response still looks perfectly fine.
+    return res.status(200).json({
+      tracks,
+      meta: {
+        model,
+        attempts,
+        fallbacks,
+        ms: Date.now() - startedAt,
+        degraded: fallbacks.length > 0,
+      },
+    });
   } catch (err) {
-    return res.status(err.status || 500).json({ error: err.message || 'Unexpected error' });
+    return res.status(err.status || 500).json({
+      error: err.message || 'Unexpected error',
+      ms: Date.now() - startedAt,
+    });
   }
 };
+
+// Exported for /api/health and for the offline test harness. Vercel only ever
+// invokes module.exports itself as the handler, so extra properties hung off
+// the exported function are inert in production.
+module.exports.peekModelCache = peekModelCache;
+module.exports.rankChatModels = rankChatModels;
+module.exports.isBannedModel = isBannedModel;
+module.exports.extractJson = extractJson;
+// Test-only: the model cache is module scope, so without this every test case
+// inherits whichever model the previous case promoted, and mocks that assume a
+// fresh catalog silently test the wrong thing.
+module.exports._resetModelCacheForTests = () => { cachedModelList = null; cachedModelListAt = 0; };

@@ -91,6 +91,19 @@
     .log-line.log-queued{color:var(--color-accent-200);}
     .log-line.log-skip{color:var(--color-neutral-500);}
     .log-line.log-error{color:#e8a2a2;}
+    /* History panel. max-height + overflow keeps a long list from pushing the
+       activity log off-screen on mobile; the rows themselves stay flex so a
+       long title truncates instead of wrapping the status badge onto its own line. */
+    .hist-list{display:flex;flex-direction:column;gap:2px;max-height:280px;overflow-y:auto;}
+    .hist-row{display:flex;align-items:flex-start;gap:var(--space-3);padding:8px 6px;border-radius:6px;}
+    .hist-row:nth-child(odd){background:color-mix(in srgb, var(--color-text) 3%, transparent);}
+    .hist-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .hist-artist{font-size:12px;color:var(--color-neutral-400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .hist-why{font-size:11px;color:var(--color-neutral-500);margin-top:3px;font-style:italic;}
+    .hist-ago{font-size:11px;color:var(--color-neutral-500);white-space:nowrap;}
+    .hist-badge{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px;white-space:nowrap;}
+    .hist-badge.hist-played{background:color-mix(in srgb, var(--color-accent) 22%, transparent);color:var(--color-accent-200);}
+    .hist-badge.hist-queued{background:color-mix(in srgb, var(--color-text) 8%, transparent);color:var(--color-neutral-400);}
 
     /* — connect screen — */
     .connect-mark{filter:drop-shadow(0 0 24px color-mix(in srgb, var(--color-accent) 45%, transparent));}
@@ -216,7 +229,46 @@
             <input class="input myturn-input" style="flex:1;min-width:180px;" type="text" value="{{ myTurnDraft }}" onChange="{{ updateMyTurnDraft }}" placeholder="e.g. slow it down, more chill and acoustic..." />
             <button type="button" class="{{ suggestBtnClass }}" onClick="{{ manualSuggest }}" disabled="{{ isThinking }}">{{ suggestBtnLabel }}</button>
           </div>
+          <sc-if value="{{ canRetry }}" hint-placeholder-val="{{ false }}">
+            <button type="button" class="btn btn-ghost" style="align-self:flex-start;font-size:12px;" onClick="{{ retryLastSuggestion }}" title="Ask again, avoiding what was just queued">
+              Not feeling it? Try again
+            </button>
+          </sc-if>
         </div>
+      </div>
+
+      <div class="card elev-sm fade-up panel-card" style="display:flex;flex-direction:column;gap:var(--space-3);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);flex-wrap:wrap;">
+          <div class="panel-title" style="margin:0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+            History
+          </div>
+          <button type="button" class="btn btn-ghost" style="font-size:12px;" onClick="{{ toggleHistory }}">{{ historyToggleLabel }}</button>
+        </div>
+        <sc-if value="{{ showHistory }}" hint-placeholder-val="{{ false }}">
+          <div class="hist-list">
+            <sc-if value="{{ hasHistoryRows }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ historyRows }}" as="row" hint-placeholder-count="3">
+                <div class="hist-row">
+                  <div style="min-width:0;flex:1;">
+                    <div class="hist-title">{{ row.title }}</div>
+                    <div class="hist-artist">{{ row.artist }}</div>
+                    <sc-if value="{{ row.hasWhy }}" hint-placeholder-val="{{ true }}">
+                      <div class="hist-why">{{ row.why }}</div>
+                    </sc-if>
+                  </div>
+                  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;">
+                    <span class="{{ row.statusClass }}">{{ row.statusLabel }}</span>
+                    <span class="hist-ago">{{ row.ago }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </sc-if>
+            <sc-if value="{{ noHistoryRows }}" hint-placeholder-val="{{ false }}">
+              <div style="opacity:.6;font-size:12px;">Nothing queued yet — the DJ's picks will show up here.</div>
+            </sc-if>
+          </div>
+        </sc-if>
       </div>
 
     </main>
@@ -905,6 +957,10 @@ class Component extends DCLogic {
     track: null,
     activeMode: null,
     isThinking: false,
+    thinkingSince: null,
+    canRetry: false,
+    showHistory: false,
+    pollDegraded: false,
     logs: [],
     myTurnDraft: '',
     queuedThisSession: 0,
@@ -914,6 +970,17 @@ class Component extends DCLogic {
   pollInterval = null;
   tickInterval = null;
   lastTriggeredId = null;
+  // Consecutive failed polls. Drives both the backoff below and the "provider
+  // unreachable" notice, so a provider outage degrades visibly and quietly
+  // instead of silently spamming one error line every 15s forever.
+  pollFailures = 0;
+  lastRequest = null;
+  lastQueuedLabels = [];
+
+  POLL_BASE_MS = 15000;
+  // Capped at 2min: long enough to stop hammering a provider that's down,
+  // short enough that recovery is noticed without a reload.
+  POLL_MAX_MS = 120000;
 
   get activeProvider() {
     return MUSIC_PROVIDERS[this.state.provider] || MUSIC_PROVIDERS.spotify;
@@ -924,6 +991,10 @@ class Component extends DCLogic {
   storageKey = (suffix) => this.state.provider + '_' + suffix;
 
   componentDidMount() {
+    // Sweeps expired Groq cache entries and stale suggestion-log rows before
+    // anything else touches localStorage, so a long-abandoned tab doesn't come
+    // back to a quota that is already full.
+    this.pruneStorage();
     this.restoreSession();
     // Ticks once a second purely to force a re-render so the seek bar/time
     // labels advance smoothly between the real 15s polls (renderVals below
@@ -933,8 +1004,12 @@ class Component extends DCLogic {
   }
 
   componentWillUnmount() {
-    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.pollInterval) clearTimeout(this.pollInterval);
     if (this.tickInterval) clearInterval(this.tickInterval);
+    if (this.visibilityBound) {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+      this.visibilityBound = false;
+    }
   }
 
   componentDidUpdate() {
@@ -1151,56 +1226,129 @@ class Component extends DCLogic {
     }
     sessionStorage.removeItem(this.storageKey('access_token'));
     sessionStorage.removeItem(this.storageKey('token_expiry'));
-    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.pollInterval) clearTimeout(this.pollInterval);
     this.setState({ accessToken: null, track: null, activeMode: null });
   };
 
   handleAuthExpired = () => {
     sessionStorage.removeItem(this.storageKey('access_token'));
     sessionStorage.removeItem(this.storageKey('token_expiry'));
-    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.pollInterval) clearTimeout(this.pollInterval);
     this.setState({ accessToken: null, track: null });
     this.addLog('> ' + this.activeProvider.label + ' session expired. Please reconnect.');
   };
 
+  // Rescheduled rather than a fixed setInterval, so the interval can widen
+  // under failure (backoff) and collapse back to normal on recovery. A plain
+  // setInterval can't change its own period, and stacking a second interval
+  // on top of the first is how you end up polling twice as often forever.
+  scheduleNextPoll = (delayMs) => {
+    if (this.pollInterval) clearTimeout(this.pollInterval);
+    this.pollInterval = setTimeout(this.pollTick, delayMs);
+  };
+
+  currentPollDelay = () => {
+    if (!this.pollFailures) return this.POLL_BASE_MS;
+    // 15s, 30s, 60s, 120s, then held at 120s.
+    return Math.min(this.POLL_MAX_MS, this.POLL_BASE_MS * Math.pow(2, this.pollFailures));
+  };
+
   startPolling() {
+    if (!this.visibilityBound) {
+      // A backgrounded tab polling every 15s all night is pure waste: battery
+      // and API quota spent on a UI nobody is looking at. Suspend while hidden
+      // and poll once immediately on return so the view is never stale.
+      // Deliberately does NOT stop DJ Mode conceptually -- Spotify keeps
+      // playing, and the first poll on return catches up.
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+      this.visibilityBound = true;
+    }
     this.pollTick();
-    this.pollInterval = setInterval(this.pollTick, 15000);
   }
+
+  handleVisibilityChange = () => {
+    if (document.hidden) {
+      if (this.pollInterval) clearTimeout(this.pollInterval);
+      this.pollInterval = null;
+      return;
+    }
+    if (this.state.accessToken) this.pollTick();
+  };
+
+  // Records a failed poll and, on the threshold crossing only, tells the user
+  // once. Logging every failure would bury the activity feed under one line
+  // every 15s for as long as the provider is down.
+  notePollFailure = (message) => {
+    this.pollFailures++;
+    if (this.pollFailures === 3) {
+      this.addLog('> ' + this.activeProvider.label + ' is not responding — backing off and retrying more slowly.');
+      this.setState({ pollDegraded: true });
+    } else if (this.pollFailures < 3) {
+      this.addLog(message);
+    }
+  };
+
+  notePollSuccess = () => {
+    if (this.pollFailures >= 3) {
+      this.addLog('> ' + this.activeProvider.label + ' is responding again.');
+    }
+    this.pollFailures = 0;
+    if (this.state.pollDegraded) this.setState({ pollDegraded: false });
+  };
 
   pollTick = async () => {
     if (!this.state.accessToken) return;
-    await this.ensureFreshToken();
-    const token = this.state.accessToken;
-    if (!token) return;
-    const provider = this.activeProvider;
+    // Hidden tabs stop rescheduling entirely; visibilitychange restarts them.
+    if (document.hidden) return;
+
+    // Every exit path below reschedules through this finally. An early return
+    // that skipped rescheduling would silently kill polling for the rest of
+    // the session -- the failure mode this whole restructure exists to avoid.
+    let reschedule = true;
     try {
-      const result = await provider.getCurrentlyPlaying(token);
-      if (result.status === 'expired') {
-        // Reactive fallback: the proactive refresh above should catch this in
-        // the common case, but if the token was revoked or our expiry clock
-        // drifted, try one more silent refresh before forcing a full reconnect.
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) return;
-        this.handleAuthExpired();
-        return;
+      await this.ensureFreshToken();
+      const token = this.state.accessToken;
+      if (!token) return;
+      const provider = this.activeProvider;
+      try {
+        const result = await provider.getCurrentlyPlaying(token);
+        if (result.status === 'expired') {
+          // Reactive fallback: the proactive refresh above should catch this in
+          // the common case, but if the token was revoked or our expiry clock
+          // drifted, try one more silent refresh before forcing a full reconnect.
+          const refreshed = await this.refreshAccessToken();
+          if (refreshed) return;
+          this.handleAuthExpired();
+          // handleAuthExpired clears the token and stops the loop deliberately;
+          // rescheduling here would poll forever against a dead session.
+          reschedule = false;
+          return;
+        }
+        if (result.status === 'error') {
+          this.notePollFailure('> ' + provider.label + ' poll failed (' + result.code + ')');
+          return;
+        }
+        this.notePollSuccess();
+        // 'unsupported' = provider has no now-playing concept at all (YouTube) --
+        // treat like 'empty' rather than spamming an error every 15s.
+        if (result.status === 'empty' || result.status === 'unsupported') { this.setState({ track: null }); return; }
+        // polledAt anchors renderVals' wall-clock progress interpolation
+        // (see the tickInterval comment in componentDidMount) -- without it,
+        // the seek bar would only visibly move once every 15s poll.
+        const track = { ...result.track, polledAt: Date.now() };
+        this.setState({ track });
+        const ratio = track.durationMs ? track.progressMs / track.durationMs : 0;
+        if (this.state.activeMode && ratio > 0.66 && this.lastTriggeredId !== track.id && !this.state.isThinking) {
+          this.lastTriggeredId = track.id;
+          this.triggerDJ(track);
+        }
+      } catch (e) {
+        this.notePollFailure('> Network error while polling ' + provider.label + ': ' + e.message);
       }
-      if (result.status === 'error') { this.addLog('> ' + provider.label + ' poll failed (' + result.code + ')'); return; }
-      // 'unsupported' = provider has no now-playing concept at all (YouTube) --
-      // treat like 'empty' rather than spamming an error every 15s.
-      if (result.status === 'empty' || result.status === 'unsupported') { this.setState({ track: null }); return; }
-      // polledAt anchors renderVals' wall-clock progress interpolation
-      // (see the tickInterval comment in componentDidMount) -- without it,
-      // the seek bar would only visibly move once every 15s poll.
-      const track = { ...result.track, polledAt: Date.now() };
-      this.setState({ track });
-      const ratio = track.durationMs ? track.progressMs / track.durationMs : 0;
-      if (this.state.activeMode && ratio > 0.66 && this.lastTriggeredId !== track.id && !this.state.isThinking) {
-        this.lastTriggeredId = track.id;
-        this.triggerDJ(track);
+    } finally {
+      if (reschedule && this.state.accessToken && !document.hidden) {
+        this.scheduleNextPoll(this.currentPollDelay());
       }
-    } catch (e) {
-      this.addLog('> Network error while polling ' + provider.label + ': ' + e.message);
     }
   };
 
@@ -1298,20 +1446,137 @@ class Component extends DCLogic {
   // localStorage (each entry is a few dozen bytes of JSON).
   loadSuggestionLog = () => {
     try {
-      return JSON.parse(localStorage.getItem('nocturne_suggestions') || '[]');
+      const raw = JSON.parse(localStorage.getItem('nocturne_suggestions') || '[]');
+      return Array.isArray(raw) ? raw : [];
     } catch (e) {
+      // Corrupt/partially-written JSON would otherwise throw on every single
+      // trigger, permanently bricking the DJ engine for that browser with no
+      // way out but devtools. Losing the log is the lesser failure.
       return [];
     }
   };
 
   saveSuggestionLog = (log) => {
-    localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-2000)));
+    try {
+      localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-2000)));
+    } catch (e) {
+      // QuotaExceededError: retry once with a much smaller tail rather than
+      // letting a full localStorage take down queueing entirely.
+      try {
+        localStorage.setItem('nocturne_suggestions', JSON.stringify(log.slice(-200)));
+      } catch (e2) {
+        this.addLog('> Could not save suggestion history (storage full).');
+      }
+    }
   };
 
-  recordSuggestion = (title, artist) => {
+  recordSuggestion = (title, artist, why) => {
     const log = this.loadSuggestionLog();
-    log.push({ title, artist, queuedAt: Date.now() });
+    log.push({ title, artist, why: why || '', queuedAt: Date.now(), played: false });
     this.saveSuggestionLog(log);
+  };
+
+  // Marks logged suggestions that have since shown up in the provider's real
+  // recently-played as actually played, so the history panel can distinguish
+  // "the DJ picked this and you listened" from "the DJ picked this and you
+  // skipped past it". Only Spotify reports real history, so for YouTube/Apple
+  // every entry stays unplayed -- surfaced honestly in the panel rather than
+  // silently implying the listener ignored everything.
+  markSuggestionsPlayed = (recentNames) => {
+    if (!recentNames || !recentNames.length) return;
+    const lower = new Set(recentNames.map(n => n.toLowerCase()));
+    const log = this.loadSuggestionLog();
+    let changed = false;
+    for (const entry of log) {
+      if (entry.played) continue;
+      if (lower.has((entry.artist + ' - ' + entry.title).toLowerCase())) {
+        entry.played = true;
+        entry.playedAt = Date.now();
+        changed = true;
+      }
+    }
+    if (changed) this.saveSuggestionLog(log);
+  };
+
+  // ---- Groq response cache -------------------------------------------------
+  // One Groq call per trigger is the app's only LLM cost, and re-triggering on
+  // the same track with the same mode (a repeat listen, a reload, DJ Mode
+  // re-firing after a seek back) asks the identical question. Caching that for
+  // 30min is the single largest free-tier saving available.
+  //
+  // The key deliberately excludes avoidList/history: those shift on every poll,
+  // so including them would mean a 0% hit rate. Suggestions the listener has
+  // since heard are still filtered out afterwards by the playedKeys guard in
+  // triggerDJ, so a stale cache entry can never actually queue a repeat -- and
+  // if that filtering leaves nothing queueable, triggerDJ retries uncached.
+  cacheKeyFor = (track, customPrompt, modeLabel) => {
+    const raw = [
+      track ? track.name : '',
+      track ? track.artists : '',
+      modeLabel || '',
+      customPrompt || '',
+      this.state.provider
+    ].join('|').toLowerCase();
+    // djb2. Not cryptographic -- a collision would only serve one track's
+    // suggestions for another, which the playedKeys guard and the "queued
+    // nothing" retry below both tolerate.
+    let hash = 5381;
+    for (let i = 0; i < raw.length; i++) hash = ((hash * 33) ^ raw.charCodeAt(i)) >>> 0;
+    return 'nocturne_groq_' + hash.toString(36);
+  };
+
+  GROQ_CACHE_TTL_MS = 30 * 60 * 1000;
+
+  readGroqCache = (key) => {
+    try {
+      const entry = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!entry || !Array.isArray(entry.tracks)) return null;
+      if (Date.now() - entry.at > this.GROQ_CACHE_TTL_MS) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return entry.tracks;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  writeGroqCache = (key, tracks) => {
+    try {
+      localStorage.setItem(key, JSON.stringify({ at: Date.now(), tracks }));
+    } catch (e) {
+      // Cache is strictly an optimisation -- a full quota just means we call
+      // Groq next time, which is the pre-cache behaviour anyway.
+    }
+  };
+
+  // localStorage has no TTL of its own, so expired cache entries would
+  // accumulate forever -- invisible until a mobile browser hits its quota and
+  // starts failing writes app-wide. Swept once per page load.
+  pruneStorage = () => {
+    try {
+      const now = Date.now();
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith('nocturne_groq_')) continue;
+        let entry = null;
+        try { entry = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* unparseable -> drop it */ }
+        if (!entry || !entry.at || now - entry.at > this.GROQ_CACHE_TTL_MS) doomed.push(key);
+      }
+      doomed.forEach(k => localStorage.removeItem(k));
+
+      // Independently, drop suggestion-log entries older than 30 days. The
+      // 2000-entry cap already bounds size, but an abandoned browser would
+      // otherwise keep feeding year-old picks into the avoid list forever.
+      const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+      const log = this.loadSuggestionLog();
+      const fresh = log.filter(e => e && e.queuedAt && now - e.queuedAt < MAX_AGE_MS);
+      if (fresh.length !== log.length) this.saveSuggestionLog(fresh);
+    } catch (e) {
+      // Private-mode Safari can throw on localStorage access itself; pruning
+      // is housekeeping, never worth breaking startup over.
+    }
   };
 
   getFeedbackSummary = (recentNames) => {
@@ -1335,125 +1600,205 @@ class Component extends DCLogic {
 
   fetchQueue = () => this.activeProvider.getQueue(this.state.accessToken);
 
-  triggerDJ = async (track, customPrompt) => {
+  // `opts.extraAvoid` carries the suggestions the listener just rejected via
+  // "Try again", so the retry asks Groq for something genuinely different
+  // instead of re-rolling the same batch. `opts.noCache` bypasses the response
+  // cache for the same reason -- a retry that returned the cached batch would
+  // be indistinguishable from the button doing nothing.
+  triggerDJ = async (track, customPrompt, opts = {}) => {
     const provider = this.activeProvider;
-    this.setState({ isThinking: true });
-    if (track) {
-      this.addLog('> "' + track.name + '" by ' + track.artists + (customPrompt ? '" — My Turn: ' + customPrompt : ' is past 66% — analyzing vibe...'));
-    } else {
-      this.addLog('> My Turn: ' + customPrompt);
-    }
-    const mode = MODES[this.state.activeMode] || MODES.default;
-    const [genres, historyData, topGenres, audioFeatures, queueItems, topTracksData] = await Promise.all([
-      track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
-      this.fetchRecentHistory(),
-      this.fetchTopGenres(),
-      track ? this.fetchAudioFeatures(track.id) : Promise.resolve(null),
-      this.fetchQueue(),
-      this.fetchTopTracks()
-    ]);
-    const { history, recentNames, recentPlayed } = historyData;
-    const { topTracks, topArtists } = topTracksData;
-    const feedback = this.getFeedbackSummary(recentNames);
-    if (queueItems.length) this.addLog('> ' + provider.label + ' queue has ' + queueItems.length + ' track(s) already.');
-    if (genres.length) this.addLog('> Confirmed ' + provider.label + ' genres: ' + genres.join(', '));
-    if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
-    if (topArtists.length) this.addLog('> Listener\'s most-played artists: ' + topArtists.slice(0, 8).join(', '));
-    if (audioFeatures && typeof audioFeatures.tempo === 'number') {
-      const energyStr = typeof audioFeatures.energy === 'number' ? ', energy ' + audioFeatures.energy.toFixed(2) : '';
-      this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM' + energyStr);
-    }
-    if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
-
-    // Hard guard against repeating an exact SONG (not artist -- suggesting a
-    // different song by the artist that's currently playing is fine and
-    // often desirable, see NO REPEAT in api/groq.js's system prompt). Built
-    // from four sources, all normalized to the same title+artist key: every
-    // song ever queued in this browser (loadSuggestionLog, retained for the
-    // last 2000 -- see saveSuggestionLog), the currently-playing track,
-    // everything actually played in the last 4h per the provider's real
-    // history (recentPlayed -- authoritative, not just our own memory), and
-    // whatever's already sitting in the provider's real live queue
-    // (queueItems). avoidLabels is the same set in human-readable form,
-    // capped at 40, sent to Groq so it avoids these in the first place
-    // instead of relying entirely on this guard to filter them out after the fact.
-    const playedKeys = new Set();
-    const avoidLabels = [];
-    const markPlayed = (title, artist) => {
-      if (!title || !artist) return;
-      const key = trackKey(title, artist);
-      if (playedKeys.has(key)) return;
-      playedKeys.add(key);
-      if (avoidLabels.length < 40) avoidLabels.push(artist + ' - ' + title);
-    };
-    this.loadSuggestionLog().forEach(e => markPlayed(e.title, e.artist));
-    if (track) markPlayed(track.name, track.artists);
-    (recentPlayed || []).forEach(rp => markPlayed(rp.title, rp.artist));
-    (queueItems || []).forEach(q => markPlayed(q.title, q.artist));
-
+    this.setState({ isThinking: true, thinkingSince: Date.now() });
+    // Remembered so the "Try again" button can re-run this exact request.
+    this.lastRequest = { track, customPrompt };
+    // Everything below runs inside try/finally. Previously the provider
+    // fetches sat OUTSIDE the try, so any throw there (provider 500, network
+    // drop mid-Promise.all) left isThinking stuck true forever -- which
+    // silently disables DJ Mode for the rest of the session, because pollTick
+    // refuses to trigger while isThinking and nothing ever cleared it. Only a
+    // page reload recovered. The finally below is the actual fix; the rest of
+    // this function is unchanged in behaviour.
     try {
-      const groqRes = await fetch('/api/groq', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          track: track ? track.name : '',
-          artist: track ? track.artists : '',
-          genres,
-          history,
-          topGenres,
-          topArtists,
-          topTracks: topTracks.map(t => t.artist + ' - ' + t.title),
-          audioFeatures,
-          feedback,
-          avoidList: avoidLabels,
-          mode: mode.label + ': ' + mode.vibe,
-          customPrompt: customPrompt || ''
-        })
-      });
-      if (!groqRes.ok) {
-        const errData = await groqRes.json().catch(() => ({}));
-        this.addLog('> AI request failed (' + groqRes.status + '): ' + (errData.error || 'unknown error'));
-        this.setState({ isThinking: false });
-        return;
+      if (track) {
+        // (The stray closing quote that used to sit at the start of the My Turn
+        // branch rendered as: Song" by Artist" — My Turn: ...)
+        this.addLog('> "' + track.name + '" by ' + track.artists + (customPrompt ? ' — My Turn: ' + customPrompt : ' is past 66% — analyzing vibe...'));
+      } else {
+        this.addLog('> My Turn: ' + customPrompt);
       }
-      const groqData = await groqRes.json();
-      const candidates = (groqData.tracks || []).slice(0, 12);
-      if (!candidates.length) {
-        this.addLog('> AI returned no suggestions.');
-        this.setState({ isThinking: false });
-        return;
+      const mode = MODES[this.state.activeMode] || MODES.default;
+      const [genres, historyData, topGenres, audioFeatures, queueItems, topTracksData] = await Promise.all([
+        track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
+        this.fetchRecentHistory(),
+        this.fetchTopGenres(),
+        track ? this.fetchAudioFeatures(track.id) : Promise.resolve(null),
+        this.fetchQueue(),
+        this.fetchTopTracks()
+      ]);
+      const { history, recentNames, recentPlayed } = historyData;
+      const { topTracks, topArtists } = topTracksData;
+      this.markSuggestionsPlayed(recentNames);
+      const feedback = this.getFeedbackSummary(recentNames);
+      if (queueItems.length) this.addLog('> ' + provider.label + ' queue has ' + queueItems.length + ' track(s) already.');
+      if (genres.length) this.addLog('> Confirmed ' + provider.label + ' genres: ' + genres.join(', '));
+      if (topGenres.length) this.addLog('> Listener\'s usual taste: ' + topGenres.join(', '));
+      if (topArtists.length) this.addLog('> Listener\'s most-played artists: ' + topArtists.slice(0, 8).join(', '));
+      if (audioFeatures && typeof audioFeatures.tempo === 'number') {
+        const energyStr = typeof audioFeatures.energy === 'number' ? ', energy ' + audioFeatures.energy.toFixed(2) : '';
+        this.addLog('> Measured tempo: ' + Math.round(audioFeatures.tempo) + ' BPM' + energyStr);
       }
-      const TARGET_QUEUED = 3;
-      let queuedCount = 0;
-      for (const sug of candidates) {
-        if (queuedCount >= TARGET_QUEUED) break;
-        const resolved = await this.resolveTrack(sug.title, sug.artist);
-        if (!resolved) {
-          this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on ' + provider.label + ', and no tracks found for that artist — skipping.');
-          continue;
+      if (feedback.liked.length || feedback.skipped.length) this.addLog('> Feedback — liked: ' + (feedback.liked.length || 0) + ', skipped: ' + (feedback.skipped.length || 0));
+
+      // Hard guard against repeating an exact SONG (not artist -- suggesting a
+      // different song by the artist that's currently playing is fine and
+      // often desirable, see NO REPEAT in api/groq.js's system prompt). Built
+      // from four sources, all normalized to the same title+artist key: every
+      // song ever queued in this browser (loadSuggestionLog, retained for the
+      // last 2000 -- see saveSuggestionLog), the currently-playing track,
+      // everything actually played in the last 4h per the provider's real
+      // history (recentPlayed -- authoritative, not just our own memory), and
+      // whatever's already sitting in the provider's real live queue
+      // (queueItems). avoidLabels is the same set in human-readable form,
+      // capped at 40, sent to Groq so it avoids these in the first place
+      // instead of relying entirely on this guard to filter them out after the fact.
+      const playedKeys = new Set();
+      const avoidLabels = [];
+      const markPlayed = (title, artist) => {
+        if (!title || !artist) return;
+        const key = trackKey(title, artist);
+        if (playedKeys.has(key)) return;
+        playedKeys.add(key);
+        if (avoidLabels.length < 40) avoidLabels.push(artist + ' - ' + title);
+      };
+      this.loadSuggestionLog().forEach(e => markPlayed(e.title, e.artist));
+      if (track) markPlayed(track.name, track.artists);
+      (recentPlayed || []).forEach(rp => markPlayed(rp.title, rp.artist));
+      (queueItems || []).forEach(q => markPlayed(q.title, q.artist));
+      // Suggestions the listener explicitly rejected via "Try again" go to the
+      // FRONT of the avoid list: it is capped at 40, and these are the entries
+      // that most need to reach Groq -- they are the whole reason for the retry.
+      const extraAvoid = (opts.extraAvoid || []).filter(Boolean);
+      const avoidList = [...new Set([...extraAvoid, ...avoidLabels])].slice(0, 40);
+
+      // runOnce resolves how many tracks it managed to queue, so the caller can
+      // decide whether a cached batch was actually usable.
+      const runOnce = async (useCache) => {
+        const cacheKey = this.cacheKeyFor(track, customPrompt, mode.label);
+        let candidates = useCache ? this.readGroqCache(cacheKey) : null;
+        let fromCache = !!candidates;
+
+        if (!candidates) {
+          const groqRes = await fetch('/api/groq', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              track: track ? track.name : '',
+              artist: track ? track.artists : '',
+              genres,
+              history,
+              topGenres,
+              topArtists,
+              topTracks: topTracks.map(t => t.artist + ' - ' + t.title),
+              audioFeatures,
+              feedback,
+              avoidList,
+              mode: mode.label + ': ' + mode.vibe,
+              customPrompt: customPrompt || ''
+            })
+          });
+          if (!groqRes.ok) {
+            const errData = await groqRes.json().catch(() => ({}));
+            if (groqRes.status === 429) {
+              const wait = errData.retryAfter || 60;
+              this.addLog('> Rate limited — too many AI requests. Try again in ' + wait + 's.');
+            } else {
+              this.addLog('> AI request failed (' + groqRes.status + '): ' + (errData.error || 'unknown error'));
+            }
+            return { queued: 0, candidates: [], failed: true };
+          }
+          const groqData = await groqRes.json();
+          candidates = (groqData.tracks || []).slice(0, 12);
+          // Surfaces silent server-side degradation: if the top-ranked model is
+          // broken, every response still looks fine and only this says otherwise.
+          if (groqData.meta && groqData.meta.degraded) {
+            this.addLog('> Note: primary AI model unavailable, answered by ' + groqData.meta.model + '.');
+          }
+          if (candidates.length) this.writeGroqCache(cacheKey, candidates);
+        } else {
+          this.addLog('> Reusing cached suggestions for this track (saves an AI call).');
         }
-        const resolvedArtistNames = resolved.track.artists.map(a => a.name).join(', ');
-        const key = trackKey(resolved.track.name, resolvedArtistNames);
-        if (playedKeys.has(key)) {
-          this.addLog('> Skipping "' + resolved.track.name + '" — already played or queued before.');
-          continue;
+
+        if (!candidates.length) {
+          this.addLog('> AI returned no suggestions.');
+          return { queued: 0, candidates: [], failed: true };
         }
-        if (resolved.fellBack) {
-          this.addLog('> "' + sug.title + '" appears hallucinated — falling back to top track by ' + sug.artist + '.');
+
+        const TARGET_QUEUED = 3;
+        let queuedCount = 0;
+        const rejected = [];
+        for (const sug of candidates) {
+          if (queuedCount >= TARGET_QUEUED) break;
+          const resolved = await this.resolveTrack(sug.title, sug.artist);
+          if (!resolved) {
+            this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on ' + provider.label + ', and no tracks found for that artist — skipping.');
+            continue;
+          }
+          const resolvedArtistNames = resolved.track.artists.map(a => a.name).join(', ');
+          const key = trackKey(resolved.track.name, resolvedArtistNames);
+          if (playedKeys.has(key)) {
+            this.addLog('> Skipping "' + resolved.track.name + '" — already played or queued before.');
+            continue;
+          }
+          if (resolved.fellBack) {
+            this.addLog('> "' + sug.title + '" appears hallucinated — falling back to top track by ' + sug.artist + '.');
+          }
+          const ok = await this.queueTrack(resolved.track, sug.why);
+          if (ok) {
+            queuedCount++;
+            playedKeys.add(key);
+            rejected.push(resolvedArtistNames + ' - ' + resolved.track.name);
+          }
         }
-        const ok = await this.queueTrack(resolved.track, sug.why);
-        if (ok) {
-          queuedCount++;
-          playedKeys.add(key);
-        }
+        return { queued: queuedCount, candidates, rejected, fromCache, failed: false };
+      };
+
+      let result = await runOnce(!opts.noCache);
+      // A cached batch can go stale in one specific way: every track in it has
+      // since been played, so playedKeys filters all of them and nothing gets
+      // queued. Falling back to a live call keeps the cache from ever making
+      // the app queue LESS than it would have without it.
+      if (!result.failed && result.queued === 0 && result.fromCache) {
+        this.addLog('> Cached suggestions were all already played — asking the AI for fresh ones.');
+        result = await runOnce(false);
       }
-      if (queuedCount === 0) {
+
+      if (!result.failed && result.queued === 0) {
         this.addLog('> None of the AI\'s suggestions could be verified on ' + provider.label + '.');
       }
+      // Feeds the "Try again" button: retrying should avoid what it just queued.
+      this.lastQueuedLabels = result.rejected || [];
+      this.setState({ canRetry: !result.failed && result.queued > 0 });
     } catch (e) {
       this.addLog('> DJ engine error: ' + e.message);
+    } finally {
+      // The whole point of the restructure above: this runs on every path,
+      // including a throw from the provider fetches, so isThinking can never
+      // latch on and permanently disable DJ Mode.
+      this.setState({ isThinking: false, thinkingSince: null });
     }
-    this.setState({ isThinking: false });
+  };
+
+  // "Try again": re-asks for the same track/prompt while telling Groq to avoid
+  // what it just queued, and skipping the response cache so the retry cannot
+  // return the identical batch.
+  retryLastSuggestion = () => {
+    if (this.state.isThinking) return;
+    const last = this.lastRequest;
+    if (!last) return;
+    this.addLog('> Trying again — asking for something different.');
+    this.triggerDJ(last.track, last.customPrompt, {
+      noCache: true,
+      extraAvoid: this.lastQueuedLabels || []
+    });
   };
 
   // Generic provider-aware helpers — default to whichever provider is
@@ -1495,8 +1840,42 @@ class Component extends DCLogic {
     return min + ':' + String(sec).padStart(2, '0');
   };
 
+  toggleHistory = () => this.setState(s => ({ showHistory: !s.showHistory }));
+
+  // Newest-first view of the suggestion log for the History panel. Capped at
+  // 40 rows: the log itself holds up to 2000 for the avoid-list guard, but
+  // rendering all of them would build a 2000-node list on every one-second
+  // clock tick, which is a real jank source on mobile for no benefit.
+  buildHistoryView = () => {
+    const log = this.loadSuggestionLog();
+    const rows = log.slice(-40).reverse().map((entry, i) => {
+      const ago = this.formatAgo(Date.now() - (entry.queuedAt || 0));
+      return {
+        id: (entry.queuedAt || 0) + '-' + i,
+        title: entry.title || '(unknown)',
+        artist: entry.artist || '',
+        why: entry.why || '',
+        hasWhy: !!entry.why,
+        ago,
+        statusLabel: entry.played ? 'played' : 'queued',
+        statusClass: entry.played ? 'hist-badge hist-played' : 'hist-badge hist-queued'
+      };
+    });
+    return rows;
+  };
+
+  formatAgo = (ms) => {
+    if (!ms || ms < 0) return 'just now';
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return min + 'm ago';
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return hr + 'h ago';
+    return Math.floor(hr / 24) + 'd ago';
+  };
+
   renderVals() {
-    const { provider: providerId, providerNotice, accessToken, track, activeMode, isThinking, logs, myTurnDraft, queuedThisSession } = this.state;
+    const { provider: providerId, providerNotice, accessToken, track, activeMode, isThinking, thinkingSince, canRetry, showHistory, pollDegraded, logs, myTurnDraft, queuedThisSession } = this.state;
     const provider = this.activeProvider;
     const connected = !!accessToken;
     const hasTrack = !!track;
@@ -1530,9 +1909,17 @@ class Component extends DCLogic {
       id,
       label: MUSIC_PROVIDERS[id].label + (MUSIC_PROVIDERS[id].implemented ? '' : ' (coming soon)')
     }));
+    // A trigger that has been running unusually long is worth saying out loud:
+    // the alternative is a UI that looks identical whether the AI is thinking
+    // or the request quietly died, leaving the listener with nothing to act on.
+    const thinkingMs = isThinking && thinkingSince ? Date.now() - thinkingSince : 0;
+    const thinkingSlow = thinkingMs > 20000;
     let engineStatusText = 'DJ engine idle — pick a mode to start watching your queue.';
-    if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
+    if (activeMode && isThinking && thinkingSlow) engineStatusText = 'Still working — the AI is taking longer than usual (' + Math.floor(thinkingMs / 1000) + 's).';
+    else if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
+    else if (activeMode && pollDegraded) engineStatusText = provider.label + ' is not responding — retrying slowly.';
     else if (activeMode) engineStatusText = 'Watching "' + MODES[activeMode].label + '" — will act near track end.';
+    const historyRows = showHistory ? this.buildHistoryView() : [];
     let capabilityNote = '';
     if (connected && providerId === 'youtube') {
       capabilityNote = 'YouTube Music has no "now playing" API, so DJ Mode can\'t auto-detect tracks — use My Turn instead. Suggestions are added to a "Nocturne DJ Queue" playlist rather than an in-app queue.';
@@ -1588,7 +1975,18 @@ class Component extends DCLogic {
       hasProviderNotice: !!providerNotice,
       providerNotice,
       hasCapabilityNote: !!capabilityNote,
-      capabilityNote
+      capabilityNote,
+      // Retry is only offered once there is something to retry *from* — before
+      // the first successful trigger the button would have no avoid list to
+      // reinforce with, making it identical to pressing Suggest now again.
+      canRetry: canRetry && !isThinking,
+      retryLastSuggestion: this.retryLastSuggestion,
+      toggleHistory: this.toggleHistory,
+      showHistory,
+      historyToggleLabel: showHistory ? 'Hide history' : 'Show history',
+      historyRows,
+      hasHistoryRows: historyRows.length > 0,
+      noHistoryRows: showHistory && historyRows.length === 0
     };
   }
 }

@@ -17,12 +17,40 @@ serverless functions that keep API keys/secrets off the client.
 | `index.html` | The whole app: provider auth, playback polling, DJ Mode, My Turn, queueing |
 | `support.js` | Generated runtime that renders `index.html`'s template — **do not edit**, rebuilt from tooling |
 | `api/groq.js` | Holds `GROQ_API_KEY` server-side, discovers a live Groq chat model, calls the chat completions API, returns clean track JSON |
-| `api/apple-token.js` | Signs Apple MusicKit "developer tokens" (ES256 JWT) server-side so the MusicKit private key never reaches the browser |
+| `api/_ratelimit.js` | Shared per-IP rate limiter used by the endpoints here (the `_` prefix keeps Vercel from routing it as a function) |
+| `api/health.js` | `GET /api/health` — reports which credentials are configured and what the model cache holds. Never calls Groq, so probing it costs no quota |
+| `api/apple-token.js` | Signs Apple MusicKit "developer tokens" (ES256 JWT) server-side so the MusicKit private key never reaches the browser. **Currently dormant** — returns a 503 naming the missing config until Apple credentials exist |
 | `api/youtube-token.js` | Proxies the Google OAuth token exchange so `YOUTUBE_CLIENT_SECRET` never reaches the browser (Google requires a client secret at exchange time even for PKCE — Spotify doesn't) |
 | `vercel.json` | Static hosting config (`framework: null` — no Vite/other preset, no rewrites needed beyond serving the files as-is) |
+| `test-api.js` / `test-client.js` | Dependency-free test harnesses — `node test-api.js`, `node test-client.js`. No network or credentials needed |
 
-Nothing runs server-side except those three functions — there's no database,
+Nothing runs server-side except those functions — there's no database,
 no build step, no bundler for the app itself.
+
+## Staying inside the free tier
+
+The app is designed to run entirely on free tiers (Vercel Hobby + Groq free),
+and a few things exist specifically to keep it there:
+
+- **One Groq call per suggestion round.** The 10–12 candidates it returns are
+  then resolved against the *music provider's* search, not the AI — so a
+  trigger costs one LLM call regardless of how many candidates come back.
+- **Responses are cached for 30 minutes** in your browser, keyed on the track,
+  mode and prompt. Re-triggering on the same song (a reload, a repeat listen)
+  costs nothing. "Try again" deliberately bypasses the cache.
+- **Polling backs off** when a provider stops responding (15s up to 2min) and
+  **pauses entirely while the tab is hidden**, so an overnight session doesn't
+  spend quota and battery on a screen nobody is looking at.
+- **Every endpoint is rate limited per IP.** `/api/groq` has no authentication
+  — anyone who finds your deployed URL could otherwise drain your Groq quota in
+  a loop. This is a speed bump rather than a hard guarantee (see the comment at
+  the top of `api/_ratelimit.js` for why serverless makes a true global limit
+  impossible without paid infrastructure).
+
+For a single listener this sits far inside the free limits. Several
+simultaneous listeners on one deployment is where you'd start to feel Groq's
+per-minute cap, which surfaces in the app as a "Rate limited" line rather than
+a crash.
 
 ## Provider capabilities
 
@@ -74,6 +102,13 @@ The UI shows a capability note for YouTube/Apple once connected.
 ```bash
 npm install -g vercel   # if you don't have it
 vercel dev
+```
+
+Tests (no dependencies, no network, no credentials):
+
+```bash
+node test-api.js
+node test-client.js
 ```
 
 Needs a `.env` (gitignored). At minimum:

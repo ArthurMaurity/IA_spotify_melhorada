@@ -9,13 +9,22 @@
 // client. The client-side code (index.html) always talks to this endpoint
 // with a plain JSON body — never to Google's token endpoint directly.
 
+const { enforceRateLimit } = require('./_ratelimit');
+
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
+// Token exchanges are rare per listener: one on connect, then one refresh
+// roughly hourly. 20/min leaves enormous headroom for a real user while still
+// capping a script trying to brute-force codes through our proxy.
+const RATE_LIMIT_PER_MIN = 20;
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  if (enforceRateLimit(req, res, 'youtube-token', RATE_LIMIT_PER_MIN)) return;
 
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
