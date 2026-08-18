@@ -44,7 +44,8 @@
        bleed into the text/controls column next to it. */
     .np-art-wrap{position:relative;flex:0 0 96px;width:96px;height:96px;max-width:96px;max-height:96px;overflow:hidden;border-radius:var(--radius-md);}
     .np-art{display:block;width:100%;height:100%;object-fit:cover;box-shadow:var(--shadow-md);}
-    .np-eq{position:absolute;right:6px;bottom:6px;display:flex;align-items:flex-end;gap:2px;height:14px;padding:3px 4px;border-radius:4px;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);}
+    .np-kicker-row{display:flex;align-items:center;gap:6px;}
+    .np-eq{display:flex;align-items:flex-end;gap:2px;height:11px;padding:0;}
     .np-eq span{width:2.5px;height:100%;border-radius:2px;background:var(--color-accent-300);transform-origin:bottom;animation:eq-bar .9s ease-in-out infinite;}
     .np-eq span:nth-child(2){animation-delay:.15s}
     .np-eq span:nth-child(3){animation-delay:.3s}
@@ -149,12 +150,14 @@
           <div class="np-row">
             <div class="np-art-wrap">
               <img class="np-art" src="{{ trackAlbumArt }}" alt="{{ trackName }}" />
-              <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
-                <div class="np-eq" aria-hidden="true"><span></span><span></span><span></span></div>
-              </sc-if>
             </div>
             <div class="np-info">
-              <div class="card-kicker">Now playing on {{ providerShortLabel }}</div>
+              <div class="card-kicker np-kicker-row">
+                <span>Now playing on {{ providerShortLabel }}</span>
+                <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
+                  <div class="np-eq" aria-hidden="true"><span></span><span></span><span></span></div>
+                </sc-if>
+              </div>
               <div class="card-title np-title">{{ trackName }}</div>
               <div class="card-body np-artist">{{ trackArtists }}</div>
 
@@ -544,21 +547,42 @@ const MUSIC_PROVIDERS = {
         const res = await fetch('https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=track&limit=' + limit, {
           headers: { Authorization: 'Bearer ' + token }
         });
-        if (!res.ok) return [];
+        if (!res.ok) {
+          // Tag the failure reason instead of returning a bare [] — a 401
+          // (expired token) or 429 (rate limited) looks identical to "no
+          // results" otherwise, and the resolve loop below silently burns
+          // through every remaining candidate with the same doomed request
+          // instead of surfacing the real problem.
+          const arr = [];
+          arr.searchError = res.status === 401 ? 'auth' : res.status === 429 ? 'rate_limited' : 'http_' + res.status;
+          return arr;
+        }
         const data = await res.json();
         return (data.tracks && data.tracks.items) || [];
       } catch (e) {
-        return [];
+        const arr = [];
+        arr.searchError = 'network';
+        return arr;
       }
     },
 
     // Returns { track, fellBack } — fellBack means the AI's exact title didn't
     // exist, so we queued the artist's most popular real track instead.
+    //
+    // Spotify's search field filters (track:/artist:) split on whitespace and
+    // treat a bare " - " as a NOT operator, so an unquoted, unsanitized title
+    // like "Panic - 2011 Remaster" silently mangles the query into something
+    // that matches nothing — not even the artist name. Quoting each field's
+    // value and stripping leading-hyphen suffixes (" - 2011 Remaster", a
+    // common reissue/remaster tag) keeps the filter intact.
     async resolveTrack(token, title, artist) {
-      const exact = await this.searchTrack(token, 'track:' + title + ' artist:' + artist, 1);
+      const cleanTitle = String(title || '').replace(/\s+-\s+.*$/, '').trim() || title;
+      const exact = await this.searchTrack(token, 'track:"' + cleanTitle + '" artist:"' + artist + '"', 1);
       if (exact[0]) return { track: exact[0], fellBack: false };
+      if (exact.searchError) return { track: null, fellBack: false, searchError: exact.searchError };
 
       const byArtist = await this.searchTrack(token, 'artist:"' + artist + '"', 5);
+      if (byArtist.searchError) return { track: null, fellBack: false, searchError: byArtist.searchError };
       if (!byArtist.length) return null;
       const top = byArtist.reduce((a, b) => ((b.popularity || 0) > (a.popularity || 0) ? b : a));
       return { track: top, fellBack: true };
@@ -661,7 +685,13 @@ const MUSIC_PROVIDERS = {
           limit + '&q=' + encodeURIComponent(query),
           { headers: { Authorization: 'Bearer ' + token } }
         );
-        if (!res.ok) return [];
+        if (!res.ok) {
+          // See the Spotify provider's searchTrack for why this is tagged
+          // instead of a bare [] — a 401/429 must not look like "no results".
+          const arr = [];
+          arr.searchError = res.status === 401 ? 'auth' : res.status === 429 ? 'rate_limited' : 'http_' + res.status;
+          return arr;
+        }
         const data = await res.json();
         return (data.items || [])
           .filter(it => it.id && it.id.videoId)
@@ -672,7 +702,9 @@ const MUSIC_PROVIDERS = {
             artists: [{ name: it.snippet.channelTitle }]
           }));
       } catch (e) {
-        return [];
+        const arr = [];
+        arr.searchError = 'network';
+        return arr;
       }
     },
 
@@ -683,8 +715,10 @@ const MUSIC_PROVIDERS = {
     async resolveTrack(token, title, artist) {
       const exact = await this.searchTrack(token, title + ' ' + artist, 1);
       if (exact[0]) return { track: exact[0], fellBack: false };
+      if (exact.searchError) return { track: null, fellBack: false, searchError: exact.searchError };
 
       const byArtist = await this.searchTrack(token, artist, 5);
+      if (byArtist.searchError) return { track: null, fellBack: false, searchError: byArtist.searchError };
       if (!byArtist.length) return null;
       try {
         const ids = byArtist.map(v => v.id).join(',');
@@ -887,7 +921,14 @@ const MUSIC_PROVIDERS = {
     async searchTrack(token, query, limit) {
       try {
         const music = window.MusicKit && MusicKit.getInstance();
-        if (!music) return [];
+        if (!music) {
+          // See the Spotify provider's searchTrack for why this is tagged
+          // instead of a bare [] — an uninitialized/unauthorized MusicKit
+          // session must not look like "no results".
+          const arr = [];
+          arr.searchError = 'auth';
+          return arr;
+        }
         const storefront = music.storefrontId || sessionStorage.getItem('apple_storefront') || 'us';
         const res = await music.api.music('/v1/catalog/' + storefront + '/search', { term: query, types: 'songs', limit });
         const songs = (res && res.data && res.data.results && res.data.results.songs && res.data.results.songs.data) || [];
@@ -898,7 +939,9 @@ const MUSIC_PROVIDERS = {
           artists: [{ name: s.attributes.artistName }]
         }));
       } catch (e) {
-        return [];
+        const arr = [];
+        arr.searchError = (e && e.status === 429) ? 'rate_limited' : 'network';
+        return arr;
       }
     },
 
@@ -908,7 +951,9 @@ const MUSIC_PROVIDERS = {
     async resolveTrack(token, title, artist) {
       const exact = await this.searchTrack(token, title + ' ' + artist, 1);
       if (exact[0]) return { track: exact[0], fellBack: false };
+      if (exact.searchError) return { track: null, fellBack: false, searchError: exact.searchError };
       const byArtist = await this.searchTrack(token, artist, 5);
+      if (byArtist.searchError) return { track: null, fellBack: false, searchError: byArtist.searchError };
       if (!byArtist.length) return null;
       return { track: byArtist[0], fellBack: true };
     },
@@ -1738,6 +1783,20 @@ class Component extends DCLogic {
         for (const sug of candidates) {
           if (queuedCount >= TARGET_QUEUED) break;
           const resolved = await this.resolveTrack(sug.title, sug.artist);
+          if (resolved && resolved.searchError) {
+            // Auth/rate-limit errors look identical to zero search results to
+            // the provider, so without this branch every remaining candidate
+            // silently burns another doomed request against the same broken
+            // token and the log reads as "nothing matched" instead of the
+            // real cause. Auth and rate-limit failures won't resolve by
+            // retrying the next candidate, so stop the whole batch instead of
+            // wasting the rest of it.
+            const reason = resolved.searchError === 'auth' ? 'Spotify session expired'
+              : resolved.searchError === 'rate_limited' ? 'Spotify rate limited this session'
+              : 'Spotify search failed (' + resolved.searchError + ')';
+            this.addLog('> ' + reason + ' — stopped resolving remaining suggestions.');
+            break;
+          }
           if (!resolved) {
             this.addLog('> "' + sug.title + '" by ' + sug.artist + ' not found on ' + provider.label + ', and no tracks found for that artist — skipping.');
             continue;
