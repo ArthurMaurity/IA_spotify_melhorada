@@ -66,10 +66,39 @@ function isBannedModel(id) {
   return EXCLUDED_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
+// Substring patterns (not full IDs — Groq's exact naming shifts, e.g.
+// "llama-3.3-70b-versatile" vs a future "llama-4-70b-...") for model
+// families with a strong reputation for broad factual knowledge, i.e. the
+// thing this app actually needs (real artists, real songs, real subgenre
+// facts) rather than raw context-window size. This app's prompt sends a
+// short, single-turn request — it never needs a huge context window, so
+// ranking purely by context_window (the previous sole criterion) was
+// optimizing for the wrong property and could hand the request to a small,
+// fast, latency-optimized model with more gaps in long-tail music knowledge
+// just because it happened to report a larger window. This list is a
+// preference, not a requirement: if none of these are present in the live
+// catalog (Groq's lineup changes), ranking falls through unchanged to the
+// context_window/tag criteria below, so the vendor-churn resilience the
+// deny-list above already provides is untouched.
+const KNOWLEDGE_PREFERRED_PATTERNS = [
+  'llama-3.3-70b', // strongest broad-knowledge Llama chat model on Groq as of writing
+  'llama-3.1-70b',
+  '70b',           // generic fallback: any 70B+-class model outranks smaller ones on knowledge depth
+  'qwen',          // Qwen's larger chat variants also test well on broad factual recall
+];
+
+function knowledgePreferenceRank(id) {
+  const lower = String(id || '').toLowerCase();
+  const idx = KNOWLEDGE_PREFERRED_PATTERNS.findIndex((pattern) => lower.includes(pattern));
+  return idx === -1 ? KNOWLEDGE_PREFERRED_PATTERNS.length : idx;
+}
+
 // Returns every viable chat model, best-first — not just the top pick.
 function rankChatModels(models) {
   const candidates = models.filter((m) => !isBannedModel(m.id));
   candidates.sort((a, b) => {
+    const knowledgeDiff = knowledgePreferenceRank(a.id) - knowledgePreferenceRank(b.id);
+    if (knowledgeDiff !== 0) return knowledgeDiff;
     const windowDiff = (b.context_window || 0) - (a.context_window || 0);
     if (windowDiff !== 0) return windowDiff;
     const aPreferred = PREFERRED_TAGS.some((tag) => String(a.id || '').toLowerCase().includes(tag));
@@ -144,7 +173,7 @@ const SYSTEM_PROMPT = [
   '{"tracks":[{"artist":"...","title":"...","why":"one short sentence naming the exact shared subgenre or production trait, per SUBGENRE LOCK"}]}',
 ].join(' ');
 
-function buildUserPrompt({ track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, mode, customPrompt }) {
+function buildUserPrompt({ track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, vetoedArtists, sessionMinutes, queuedThisSession, mode, customPrompt }) {
   const parts = [];
   if (track || artist) {
     parts.push(`Current track: "${track || 'unknown'}" by ${artist || 'unknown artist'}.`);
@@ -162,6 +191,18 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, topArtists
     if (typeof audioFeatures.energy === 'number') bits.push(`energy ${audioFeatures.energy.toFixed(2)}`);
     if (typeof audioFeatures.danceability === 'number') bits.push(`danceability ${audioFeatures.danceability.toFixed(2)}`);
     parts.push(`Current track measured ${bits.join(', ')} (0-1 scale where applicable — this is ground truth, not a guess).`);
+  } else if (track || artist) {
+    // Spotify's Web API has locked the audio-features endpoint for apps
+    // created after Nov 2024 (see README "Known limitations"), and the
+    // Spotify provider's getAudioFeatures() returns null unconditionally —
+    // this branch is not a rare fallback, it is the normal path on every
+    // single request today. Rather than silently omit tempo/energy grounding
+    // (leaving the GOLDEN RULE's "match numerically... instead of guessing
+    // from genre alone" with nothing to match against), ask the model to
+    // estimate from its own knowledge and be explicit that it's an estimate,
+    // not a measurement — weaker than real audio-features data, but strictly
+    // better than not mentioning tempo/energy at all.
+    parts.push('No measured tempo/energy data is available for the current track (the provider does not expose it). Estimate the current track\'s approximate BPM and energy level from your own knowledge of the real song, and match new suggestions to that estimate — clearly a best-effort estimate, not a measurement, so weight it below any confirmed genre data above if they conflict.');
   }
   if (Array.isArray(history) && history.length) {
     parts.push(`Listener's recent history, oldest to newest (last one is most recent): ${history.join(' | ')}.`);
@@ -190,8 +231,29 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, topArtists
     // list is completely fine per NO REPEAT -- only the exact songs listed are off-limits.
     parts.push(`Songs already queued or played very recently — do NOT suggest any of these exact songs again (a different song by the same artist is fine): ${avoidList.join(' | ')}.`);
   }
+  if (Array.isArray(vetoedArtists) && vetoedArtists.length) {
+    // Distinct from avoidList (exact songs, session-scoped, provider-verified)
+    // and from feedback.skipped (soft signal, inferred, decays with time):
+    // this is a small, explicit, listener-curated, cross-session "never this
+    // artist" list (see IMPROVEMENT_PLAN.md item 4.3) — persisted in the
+    // browser's localStorage, not sent because of any automatic inference.
+    // Hard exclude, not a soft deprioritization.
+    parts.push(`NEVER-SUGGEST ARTISTS (mandatory, listener-curated): the listener has explicitly asked to never receive suggestions from these artists, across all sessions — do not suggest any song by: ${vetoedArtists.join(', ')}.`);
+  }
   if (mode) {
     parts.push(`Session mode / vibe to respect alongside the golden rule: ${mode}.`);
+  }
+  if (typeof sessionMinutes === 'number' && sessionMinutes > 0) {
+    // Only modes whose vibe text actually references session progression
+    // (e.g. "Night Wind-Down" — see MODES in index.html) act on this; other
+    // modes' prompt text never mentions "the session", so this line is
+    // effectively inert for them. Sent unconditionally rather than gated
+    // client-side so adding a future energy-arc mode doesn't require a
+    // second wiring point.
+    const queuedNote = typeof queuedThisSession === 'number' && queuedThisSession > 0
+      ? `, ${queuedThisSession} track${queuedThisSession === 1 ? '' : 's'} queued so far`
+      : '';
+    parts.push(`This listening session has been running for about ${sessionMinutes} minute${sessionMinutes === 1 ? '' : 's'}${queuedNote} — if the session mode's vibe describes a progression over the session (e.g. gradually decreasing energy), let this duration inform how far along that arc the current suggestion should sit, rather than treating every trigger as an isolated starting point.`);
   }
   if (customPrompt) {
     parts.push(`LISTENER'S EXPLICIT INSTRUCTION (top priority — see TOP PRIORITY OVERRIDE rule): "${customPrompt}". If this names a concrete genre/style, honour it exactly and directly rather than blending it with the current track's style.`);
@@ -347,13 +409,13 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
   }
 
-  const { track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, mode, customPrompt } = req.body || {};
+  const { track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, vetoedArtists, sessionMinutes, queuedThisSession, mode, customPrompt } = req.body || {};
 
   const startedAt = Date.now();
   try {
     const { data, model, attempts, fallbacks } = await callGroqWithFallback(apiKey, [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, mode, customPrompt }) },
+      { role: 'user', content: buildUserPrompt({ track, artist, genres, history, topGenres, topArtists, topTracks, audioFeatures, feedback, avoidList, vetoedArtists, sessionMinutes, queuedThisSession, mode, customPrompt }) },
     ]);
 
     const rawText = data?.choices?.[0]?.message?.content || '';

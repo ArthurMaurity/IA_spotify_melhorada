@@ -125,7 +125,32 @@ section('groq: model ranking & JSON extraction');
     { id: 'llama-prompt-guard-2-86m', context_window: 512 },
   ]);
   check('ranking drops banned models', ranked.length === 2, JSON.stringify(ranked));
-  check('ranking is widest-context-first', ranked[0] === 'openai/gpt-oss-120b', JSON.stringify(ranked));
+  check('ranking is widest-context-first when no knowledge-preferred model is present',
+    ranked[0] === 'openai/gpt-oss-120b', JSON.stringify(ranked));
+
+  // A knowledge-preferred model (see KNOWLEDGE_PREFERRED_PATTERNS in
+  // api/groq.js) must outrank a model with a strictly larger context window
+  // — this app sends short, single-turn prompts, so raw context size is not
+  // a proxy for the thing that actually matters here: broad, accurate
+  // knowledge of real artists/songs. Regression guard for the bug diagnosed
+  // in IMPROVEMENT_PLAN.md item 4.0, where context-window-only ranking could
+  // silently hand every request to a small, fast, knowledge-shallow model.
+  const knowledgeRanked = groq.rankChatModels([
+    { id: 'small-fast-8b', context_window: 200000 },
+    { id: 'llama-3.3-70b-versatile', context_window: 131072 },
+  ]);
+  check('a 70b knowledge-preferred model outranks a larger-context small model',
+    knowledgeRanked[0] === 'llama-3.3-70b-versatile', JSON.stringify(knowledgeRanked));
+
+  // Falls through unchanged to context_window ranking when no preferred name
+  // is present in the live catalog — the preference must never crash or
+  // reorder unrelated models when it simply doesn't match anything.
+  const noPreferredMatch = groq.rankChatModels([
+    { id: 'gamma-chat-mini', context_window: 4096 },
+    { id: 'gamma-chat-pro', context_window: 32768 },
+  ]);
+  check('falls through to context_window ranking when nothing matches the knowledge preference',
+    noPreferredMatch[0] === 'gamma-chat-pro', JSON.stringify(noPreferredMatch));
 
   check('extractJson parses bare JSON', groq.extractJson('{"tracks":[]}')?.tracks?.length === 0);
   check('extractJson strips markdown fences',
