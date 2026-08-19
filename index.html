@@ -68,7 +68,7 @@
     .np-info{flex:1 1 auto;min-width:0;max-width:100%;}
     .np-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .np-artist{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 var(--space-3);}
-    .np-seek{position:relative;height:4px;border-radius:999px;background:var(--color-neutral-700);overflow:visible;}
+    .np-seek{position:relative;height:4px;border-radius:999px;background:color-mix(in srgb, var(--color-text) 18%, transparent);overflow:visible;}
     .np-seek-live{cursor:pointer;}
     /* Hit area taller than the visible track so it's comfortable to tap on
        a phone without making the bar itself look fat on desktop. */
@@ -159,7 +159,7 @@
       background:linear-gradient(160deg, var(--color-neutral-800), var(--color-neutral-900, #0d0e17));
       border:1px solid var(--color-neutral-700);border-radius:26px;padding:14px;box-sizing:border-box;
       box-shadow:0 24px 60px rgba(0,0,0,.55), inset 0 1px 0 color-mix(in srgb, var(--color-text) 8%, transparent);}
-    .pod-status{display:flex;align-items:center;gap:8px;font-family:var(--font-mono, monospace);font-size:11px;color:var(--color-neutral-400);padding:0 4px;}
+    .pod-status{display:flex;align-items:center;gap:8px;font-family:var(--font-body);font-size:11px;color:var(--color-neutral-400);padding:0 4px;}
     .pod-brand{font-weight:600;color:var(--color-accent-200);letter-spacing:.06em;}
     .pod-status-right{margin-left:auto;display:flex;align-items:center;gap:6px;}
     .pod-chip{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:28px;height:24px;padding:0 6px;border-radius:8px;border:1px solid var(--color-neutral-700);background:transparent;color:inherit;font:inherit;cursor:pointer;}
@@ -171,12 +171,14 @@
     .pod-screen{position:relative;height:min(52vh,340px);border-radius:12px;overflow:hidden;
       background:#07080d;border:1px solid var(--color-neutral-700);
       box-shadow:inset 0 0 40px rgba(0,0,0,.8);
-      font-family:var(--font-mono, ui-monospace, monospace);display:flex;flex-direction:column;}
-    .pod-crumb{flex:none;padding:7px 10px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-500);border-bottom:1px solid var(--color-neutral-800);}
+      font-family:var(--font-body);display:flex;flex-direction:column;}
+    .pod-crumb{flex:none;padding:7px 10px;font-size:9px;letter-spacing:.18em;font-weight:600;text-transform:uppercase;color:var(--color-neutral-500);border-bottom:1px solid var(--color-neutral-800);}
     .pod-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px;display:flex;flex-direction:column;gap:8px;animation:fade-up .25s ease both;}
     .pod-body::-webkit-scrollbar{width:5px}
+    .pod-screen .np-seek{background:color-mix(in srgb, var(--color-text) 22%, transparent);}
+    .pod-screen .np-times{color:var(--color-neutral-400);}
     .pod-art{width:100%;max-height:150px;object-fit:contain;border-radius:8px;align-self:center;}
-    .pod-line{font-size:12px;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pod-line{font-size:13px;font-weight:500;letter-spacing:-.01em;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .pod-sub{font-size:11px;color:var(--color-neutral-400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .pod-foot{flex:none;padding:6px 10px;font-size:10px;color:var(--color-neutral-500);border-top:1px solid var(--color-neutral-800);display:flex;gap:6px;align-items:center;}
     .pod-item{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--color-neutral-300);cursor:pointer;border:1px solid transparent;text-align:left;background:transparent;font-family:inherit;width:100%;box-sizing:border-box;}
@@ -190,7 +192,7 @@
       background:radial-gradient(circle at 50% 30%, var(--color-neutral-700), var(--color-neutral-800));
       box-shadow:inset 0 2px 6px rgba(255,255,255,.06), 0 6px 18px rgba(0,0,0,.5);}
     .pod-zone{position:absolute;background:transparent;border:0;color:var(--color-neutral-300);cursor:pointer;font-size:9px;letter-spacing:.1em;
-      display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;font-family:var(--font-mono,monospace);}
+      display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;font-family:var(--font-body);}
     .pod-zone:hover{color:var(--color-accent-200);}
     .pod-zone:active{color:var(--color-accent);}
     .pod-zone.up{top:0;left:28%;right:28%;height:30%;border-radius:50% 50% 0 0/100% 100% 0 0;}
@@ -199,14 +201,14 @@
     .pod-zone.right{right:0;top:28%;bottom:28%;width:30%;}
     .pod-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38%;height:38%;border-radius:50%;
       background:linear-gradient(160deg,var(--color-neutral-800),#0b0c14);border:1px solid var(--color-neutral-700);
-      color:var(--color-neutral-300);font-size:9px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-mono,monospace);}
+      color:var(--color-neutral-300);font-size:9px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-body);}
     .pod-center:hover{color:var(--color-accent-200);border-color:var(--color-accent-300);}
     .pod-center:active{transform:translate(-50%,-50%) scale(.95);}
     .pod-aux{display:flex;flex-direction:column;gap:10px;}
-    .pod-btn{min-width:52px;min-height:44px;padding:0 10px;border-radius:999px;border:1px solid var(--color-neutral-700);background:var(--color-neutral-800);color:var(--color-neutral-300);font-size:10px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-mono,monospace);}
+    .pod-btn{min-width:52px;min-height:44px;padding:0 10px;border-radius:999px;border:1px solid var(--color-neutral-700);background:var(--color-neutral-800);color:var(--color-neutral-300);font-size:10px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-body);}
     .pod-btn:hover{color:var(--color-accent-200);border-color:var(--color-accent-300);}
     .pod-btn[disabled]{cursor:not-allowed;opacity:.35;}
-    .pod-credit{text-align:center;font-size:9px;letter-spacing:.14em;color:var(--color-neutral-600);font-family:var(--font-mono,monospace);}
+    .pod-credit{text-align:center;font-size:9px;letter-spacing:.14em;color:var(--color-neutral-600);font-family:var(--font-body);}
 
     /* overlays inside the screen */
     .pod-overlay{position:absolute;inset:0;z-index:5;background:rgba(5,6,10,.96);display:flex;flex-direction:column;animation:fade-up .2s ease both;}
@@ -214,7 +216,7 @@
     .pod-input:focus{outline:2px solid var(--color-accent-300);outline-offset:1px;}
 
     /* keyboard legend — desktop only */
-    .pod-keys{position:fixed;right:20px;bottom:20px;font-family:var(--font-mono,monospace);font-size:10px;color:var(--color-neutral-500);line-height:1.7;text-align:right;pointer-events:none;}
+    .pod-keys{position:fixed;right:20px;bottom:20px;font-family:var(--font-body);font-size:10px;color:var(--color-neutral-500);line-height:1.7;text-align:right;pointer-events:none;}
     @media (max-width: 900px){ .pod-keys{display:none;} }
 
   </style>
@@ -407,8 +409,8 @@
             </sc-if>
             <sc-if value="{{ connected }}" hint-placeholder-val="{{ false }}">
               <button type="button" class="pod-item" onClick="{{ disconnect }}">Disconnect</button>
-              <button type="button" class="pod-item is-focus" onClick="{{ closeConnect }}">Close</button>
             </sc-if>
+            <button type="button" class="pod-item" onClick="{{ closeConnect }}">Close</button>
           </div>
           <div class="pod-foot">{{ connectedProviderLabel }}</div>
         </div>
@@ -1144,6 +1146,7 @@ class Component extends DCLogic {
     detailIndex: 0,
     showLog: false,
     showConnect: false,
+    connectDismissed: false,
     logUnread: false
   };
 
@@ -2267,7 +2270,7 @@ class Component extends DCLogic {
 
   goBack = () => this.setState(s => {
     if (s.showLog) return { showLog: false };
-    if (s.showConnect && s.accessToken) return { showConnect: false };
+    if (s.showConnect || (!s.accessToken && !s.connectDismissed)) return { showConnect: false, connectDismissed: true };
     if (!s.screenStack.length) return { activeScreen: 'root', wheelFocus: 0 };
     const stack = s.screenStack.slice();
     const prev = stack.pop();
@@ -2304,8 +2307,12 @@ class Component extends DCLogic {
 
   openModes = () => this.goTo('modes');
   toggleLog = () => this.setState(s => ({ showLog: !s.showLog, logUnread: false }));
-  openConnect = () => this.setState({ showConnect: true });
-  closeConnect = () => this.setState({ showConnect: false });
+  // Toggles: a second tap on the status-bar chip closes it again. connectDismissed
+  // lets the auto-open (no token yet) be dismissed without losing the auto-open rule.
+  openConnect = () => this.setState(s => (s.showConnect || !s.accessToken)
+    ? { showConnect: false, connectDismissed: true }
+    : { showConnect: true, connectDismissed: false });
+  closeConnect = () => this.setState({ showConnect: false, connectDismissed: true });
 
   // Keyboard mirrors the wheel exactly -- same handlers, no parallel logic.
   handleKeyDown = (e) => {
@@ -2382,7 +2389,7 @@ class Component extends DCLogic {
       openConnect: this.openConnect,
       closeConnect: this.closeConnect,
       showLog: s.showLog,
-      showConnect: s.showConnect || !s.accessToken,
+      showConnect: s.showConnect || (!s.accessToken && !s.connectDismissed),
       logAlertFlag: s.logUnread ? '1' : '0',
       clockLabel: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       connectionTitle: s.accessToken ? this.activeProvider.label + ' connected' : 'Not connected',
