@@ -179,9 +179,15 @@
     .pod-screen .np-seek{height:5px;background:var(--color-neutral-700);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
     .pod-screen .np-seek-fill{background:var(--color-accent-400);box-shadow:0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);}
     .pod-screen .np-times{color:var(--color-neutral-400);}
-    .pod-art{width:100%;max-height:150px;object-fit:contain;border-radius:8px;align-self:center;}
+    .pod-art{width:100%;max-height:120px;object-fit:contain;border-radius:8px;align-self:center;}
     .pod-line{font-size:13px;font-weight:500;letter-spacing:-.01em;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .pod-sub{font-size:11px;color:var(--color-neutral-400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pod-transport{flex:none;display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 10px;border-top:1px solid var(--color-neutral-800);}
+    .pod-tbtn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:var(--color-neutral-300);cursor:pointer;transition:color .15s ease,transform .15s ease,background .15s ease;}
+    .pod-tbtn:hover{color:var(--color-accent-200);transform:scale(1.1);}
+    .pod-tbtn:active{transform:scale(.94);}
+    .pod-tbtn-main{width:40px;height:40px;background:var(--color-accent);color:#12131c;}
+    .pod-tbtn-main:hover{background:var(--color-accent-400);color:#12131c;}
     .pod-foot{flex:none;padding:6px 10px;font-size:10px;color:var(--color-neutral-500);border-top:1px solid var(--color-neutral-800);display:flex;gap:6px;align-items:center;}
     .pod-item{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--color-neutral-300);cursor:pointer;border:1px solid transparent;text-align:left;background:transparent;font-family:inherit;width:100%;box-sizing:border-box;}
     .pod-item.is-focus{background:color-mix(in srgb, var(--color-accent) 22%, transparent);color:var(--color-text);border-color:var(--color-accent-300);}
@@ -262,24 +268,6 @@
               <div class="np-seek-fill" style="width:{{ progressPctStr }};"></div>
             </div>
             <div class="np-times"><span>{{ elapsedLabel }}</span><span>{{ durationLabel }}</span></div>
-            <sc-if value="{{ canControlPlayback }}" hint-placeholder-val="{{ false }}">
-              <div class="np-controls" style="justify-content:center;">
-                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipPrevious }}" aria-label="Previous track">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-                </button>
-                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ togglePlayback }}" aria-label="{{ playPauseLabel }}">
-                  <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                  </sc-if>
-                  <sc-if value="{{ isPaused }}" hint-placeholder-val="{{ true }}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                  </sc-if>
-                </button>
-                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipNext }}" aria-label="Next track">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg>
-                </button>
-              </div>
-            </sc-if>
           </sc-if>
           <sc-if value="{{ noTrack }}" hint-placeholder-val="{{ false }}">
             <div class="pod-sub" style="white-space:normal;">{{ noTrackText }}</div>
@@ -296,6 +284,27 @@
             <div class="pod-hint" style="white-space:normal;">{{ capabilityNote }}</div>
           </sc-if>
         </div>
+        <sc-if value="{{ canControlPlayback }}" hint-placeholder-val="{{ true }}">
+          <div class="pod-transport">
+            <button type="button" class="pod-tbtn" onClick="{{ skipPrevious }}" title="Previous" aria-label="Previous track">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
+            <button type="button" class="pod-tbtn" onClick="{{ restartTrack }}" title="Restart" aria-label="Restart track">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg>
+            </button>
+            <button type="button" class="pod-tbtn pod-tbtn-main" onClick="{{ togglePlayback }}" title="{{ playPauseLabel }}" aria-label="{{ playPauseLabel }}">
+              <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+              </sc-if>
+              <sc-if value="{{ isPaused }}" hint-placeholder-val="{{ true }}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </sc-if>
+            </button>
+            <button type="button" class="pod-tbtn" onClick="{{ skipNext }}" title="Next" aria-label="Next track">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg>
+            </button>
+          </div>
+        </sc-if>
         <div class="pod-foot">
           <button type="button" class="pod-item is-active" style="padding:0;width:auto;" onClick="{{ openModes }}">{{ activeModeLabel }}</button>
           <span style="margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ engineStatusText }}</span>
@@ -1612,6 +1621,8 @@ class Component extends DCLogic {
     provider.seek(accessToken, positionMs);
   };
 
+  restartTrack = () => this.seekTo(0);
+
   seekBarClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     if (!rect.width) return;
@@ -2487,6 +2498,7 @@ class Component extends DCLogic {
       togglePlayback: this.togglePlayback,
       skipNext: this.skipNext,
       skipPrevious: this.skipPrevious,
+      restartTrack: this.restartTrack,
       seekBarClick: this.seekBarClick,
       seekBarDrag: this.seekBarDrag,
       seekBarClass: canControlPlayback ? 'np-seek np-seek-live' : 'np-seek',
