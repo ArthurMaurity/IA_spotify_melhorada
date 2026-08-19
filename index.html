@@ -174,8 +174,10 @@
       font-family:var(--font-body);display:flex;flex-direction:column;}
     .pod-crumb{flex:none;padding:7px 10px;font-size:9px;letter-spacing:.18em;font-weight:600;text-transform:uppercase;color:var(--color-neutral-500);border-bottom:1px solid var(--color-neutral-800);}
     .pod-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px;display:flex;flex-direction:column;gap:8px;animation:fade-up .25s ease both;}
+    .pod-body > *{flex:0 0 auto;}
     .pod-body::-webkit-scrollbar{width:5px}
-    .pod-screen .np-seek{background:color-mix(in srgb, var(--color-text) 22%, transparent);}
+    .pod-screen .np-seek{height:5px;background:var(--color-neutral-700);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+    .pod-screen .np-seek-fill{background:var(--color-accent-400);box-shadow:0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);}
     .pod-screen .np-times{color:var(--color-neutral-400);}
     .pod-art{width:100%;max-height:150px;object-fit:contain;border-radius:8px;align-self:center;}
     .pod-line{font-size:13px;font-weight:500;letter-spacing:-.01em;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
