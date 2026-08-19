@@ -152,9 +152,74 @@
       .mode-btn{min-width:100% !important;}
       .np-controls{justify-content:center;width:100%;}
     }
+
+    /* ── iPod device chassis ───────────────────────────────────────── */
+    .pod-stage{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--space-4);box-sizing:border-box;position:relative;}
+    .pod{width:100%;max-width:420px;display:flex;flex-direction:column;gap:var(--space-4);
+      background:linear-gradient(160deg, var(--color-neutral-800), var(--color-neutral-900, #0d0e17));
+      border:1px solid var(--color-neutral-700);border-radius:26px;padding:14px;box-sizing:border-box;
+      box-shadow:0 24px 60px rgba(0,0,0,.55), inset 0 1px 0 color-mix(in srgb, var(--color-text) 8%, transparent);}
+    .pod-status{display:flex;align-items:center;gap:8px;font-family:var(--font-mono, monospace);font-size:11px;color:var(--color-neutral-400);padding:0 4px;}
+    .pod-brand{font-weight:600;color:var(--color-accent-200);letter-spacing:.06em;}
+    .pod-status-right{margin-left:auto;display:flex;align-items:center;gap:6px;}
+    .pod-chip{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:28px;height:24px;padding:0 6px;border-radius:8px;border:1px solid var(--color-neutral-700);background:transparent;color:inherit;font:inherit;cursor:pointer;}
+    .pod-chip:hover{border-color:var(--color-accent-300);color:var(--color-accent-200);}
+    .pod-chip[data-alert="1"]{color:var(--color-accent);border-color:var(--color-accent);animation:pulse-dot 1.6s ease-in-out infinite;}
+    .pod-led{width:8px;height:8px;border-radius:50%;flex:none;}
+
+    /* screen */
+    .pod-screen{position:relative;height:min(52vh,340px);border-radius:12px;overflow:hidden;
+      background:#07080d;border:1px solid var(--color-neutral-700);
+      box-shadow:inset 0 0 40px rgba(0,0,0,.8);
+      font-family:var(--font-mono, ui-monospace, monospace);display:flex;flex-direction:column;}
+    .pod-crumb{flex:none;padding:7px 10px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-500);border-bottom:1px solid var(--color-neutral-800);}
+    .pod-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px;display:flex;flex-direction:column;gap:8px;animation:fade-up .25s ease both;}
+    .pod-body::-webkit-scrollbar{width:5px}
+    .pod-art{width:100%;max-height:150px;object-fit:contain;border-radius:8px;align-self:center;}
+    .pod-line{font-size:12px;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pod-sub{font-size:11px;color:var(--color-neutral-400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pod-foot{flex:none;padding:6px 10px;font-size:10px;color:var(--color-neutral-500);border-top:1px solid var(--color-neutral-800);display:flex;gap:6px;align-items:center;}
+    .pod-item{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--color-neutral-300);cursor:pointer;border:1px solid transparent;text-align:left;background:transparent;font-family:inherit;width:100%;box-sizing:border-box;}
+    .pod-item.is-focus{background:color-mix(in srgb, var(--color-accent) 22%, transparent);color:var(--color-text);border-color:var(--color-accent-300);}
+    .pod-item.is-active{color:var(--color-accent-200);}
+    .pod-hint{font-size:10px;color:var(--color-neutral-500);}
+
+    /* wheel */
+    .pod-controls{display:flex;align-items:center;justify-content:center;gap:14px;}
+    .pod-wheel{position:relative;width:clamp(150px,44vw,180px);aspect-ratio:1/1;border-radius:50%;flex:none;
+      background:radial-gradient(circle at 50% 30%, var(--color-neutral-700), var(--color-neutral-800));
+      box-shadow:inset 0 2px 6px rgba(255,255,255,.06), 0 6px 18px rgba(0,0,0,.5);}
+    .pod-zone{position:absolute;background:transparent;border:0;color:var(--color-neutral-300);cursor:pointer;font-size:9px;letter-spacing:.1em;
+      display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;font-family:var(--font-mono,monospace);}
+    .pod-zone:hover{color:var(--color-accent-200);}
+    .pod-zone:active{color:var(--color-accent);}
+    .pod-zone.up{top:0;left:28%;right:28%;height:30%;border-radius:50% 50% 0 0/100% 100% 0 0;}
+    .pod-zone.down{bottom:0;left:28%;right:28%;height:30%;}
+    .pod-zone.left{left:0;top:28%;bottom:28%;width:30%;}
+    .pod-zone.right{right:0;top:28%;bottom:28%;width:30%;}
+    .pod-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38%;height:38%;border-radius:50%;
+      background:linear-gradient(160deg,var(--color-neutral-800),#0b0c14);border:1px solid var(--color-neutral-700);
+      color:var(--color-neutral-300);font-size:9px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-mono,monospace);}
+    .pod-center:hover{color:var(--color-accent-200);border-color:var(--color-accent-300);}
+    .pod-center:active{transform:translate(-50%,-50%) scale(.95);}
+    .pod-aux{display:flex;flex-direction:column;gap:10px;}
+    .pod-btn{min-width:52px;min-height:44px;padding:0 10px;border-radius:999px;border:1px solid var(--color-neutral-700);background:var(--color-neutral-800);color:var(--color-neutral-300);font-size:10px;letter-spacing:.1em;cursor:pointer;font-family:var(--font-mono,monospace);}
+    .pod-btn:hover{color:var(--color-accent-200);border-color:var(--color-accent-300);}
+    .pod-btn[disabled]{cursor:not-allowed;opacity:.35;}
+    .pod-credit{text-align:center;font-size:9px;letter-spacing:.14em;color:var(--color-neutral-600);font-family:var(--font-mono,monospace);}
+
+    /* overlays inside the screen */
+    .pod-overlay{position:absolute;inset:0;z-index:5;background:rgba(5,6,10,.96);display:flex;flex-direction:column;animation:fade-up .2s ease both;}
+    .pod-input{width:100%;box-sizing:border-box;background:#0d0f18;border:1px solid var(--color-neutral-700);border-radius:6px;color:var(--color-text);font-family:inherit;font-size:12px;padding:7px 8px;}
+    .pod-input:focus{outline:2px solid var(--color-accent-300);outline-offset:1px;}
+
+    /* keyboard legend — desktop only */
+    .pod-keys{position:fixed;right:20px;bottom:20px;font-family:var(--font-mono,monospace);font-size:10px;color:var(--color-neutral-500);line-height:1.7;text-align:right;pointer-events:none;}
+    @media (max-width: 900px){ .pod-keys{display:none;} }
+
   </style>
 </helmet>
-<div style="min-height:100vh;display:flex;flex-direction:column;position:relative;">
+<div class="pod-stage">
 
   <sc-if value="{{ hasTrack }}" hint-placeholder-val="{{ false }}">
     <div style="position:fixed;inset:0;z-index:-1;overflow:hidden;background:var(--color-bg);">
@@ -163,257 +228,217 @@
     </div>
   </sc-if>
 
-  <sc-if value="{{ connected }}" hint-placeholder-val="{{ false }}">
-    <nav class="nav">
-      <span class="nav-brand" style="display:flex;align-items:center;gap:8px">
-        <svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path d="M56,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM88,24a8,8,0,0,0-8,8V224a8,8,0,0,0,16,0V32A8,8,0,0,0,88,24Zm40,32a8,8,0,0,0-8,8V192a8,8,0,0,0,16,0V64A8,8,0,0,0,128,56Zm40,32a8,8,0,0,0-8,8v64a8,8,0,0,0,16,0V96A8,8,0,0,0,168,88Zm40-16a8,8,0,0,0-8,8v96a8,8,0,0,0,16,0V80A8,8,0,0,0,208,72Z"/></svg>
-        Nocturne DJ
+  <div class="pod">
+
+    <div class="pod-status">
+      <span class="pod-brand">nocturne</span>
+      <span>v1.0</span>
+      <span class="pod-status-right">
+        <button type="button" class="pod-chip" onClick="{{ openConnect }}" title="{{ connectionTitle }}" aria-label="{{ connectionTitle }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 9a15 15 0 0 1 20 0"/><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1"/></svg>
+        </button>
+        <button type="button" class="pod-chip" data-alert="{{ logAlertFlag }}" onClick="{{ toggleLog }}" title="Activity log" aria-label="Activity log">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
+        </button>
+        <span>{{ clockLabel }}</span>
+        <span class="pod-led" style="background:{{ statusDotColor }};animation:{{ statusAnim }};" title="{{ engineStatusText }}"></span>
       </span>
-      <span style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <sc-if value="{{ hasQueuedThisSession }}" hint-placeholder-val="{{ false }}">
-          <span class="tag tag-accent">{{ queuedThisSession }} queued this session</span>
-        </sc-if>
-        <span class="tag tag-outline">{{ connectedProviderLabel }}</span>
-      </span>
-      <button type="button" class="btn btn-ghost" onClick="{{ disconnect }}">Disconnect</button>
-    </nav>
+    </div>
 
-    <main style="flex:1;padding:var(--space-8) var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-6);max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;">
+    <div class="pod-screen">
+      <div class="pod-crumb">{{ breadcrumb }}</div>
 
-      <div key="{{ nowPlayingKey }}" class="card elev-md fade-up" style="min-height:96px;overflow:hidden;">
-        <sc-if value="{{ hasTrack }}" hint-placeholder-val="{{ false }}">
-          <div class="np-row">
-            <div class="np-art-wrap">
-              <img class="np-art" src="{{ trackAlbumArt }}" alt="{{ trackName }}" onLoad="{{ markArtLoaded }}" />
+      <sc-if value="{{ isRoot }}" hint-placeholder-val="{{ true }}">
+        <div class="pod-body">
+          <sc-if value="{{ hasTrack }}" hint-placeholder-val="{{ false }}">
+            <img class="pod-art" src="{{ trackAlbumArt }}" alt="{{ trackName }}" onLoad="{{ markArtLoaded }}" />
+            <div class="pod-line">{{ trackName }}</div>
+            <div class="pod-sub">{{ trackArtists }}</div>
+            <div class="np-seek" style="margin-top:2px;">
+              <div class="np-seek-fill" style="width:{{ progressPctStr }};"></div>
             </div>
-            <div class="np-info">
-              <div class="card-kicker np-kicker-row">
-                <span>Now playing on {{ providerShortLabel }}</span>
-                <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
-                  <div class="np-eq" aria-hidden="true"><span></span><span></span><span></span></div>
-                </sc-if>
+            <div class="np-times"><span>{{ elapsedLabel }}</span><span>{{ durationLabel }}</span></div>
+            <sc-if value="{{ canControlPlayback }}" hint-placeholder-val="{{ false }}">
+              <div class="np-controls" style="justify-content:center;">
+                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipPrevious }}" aria-label="Previous track">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+                </button>
+                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ togglePlayback }}" aria-label="{{ playPauseLabel }}">
+                  <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                  </sc-if>
+                  <sc-if value="{{ isPaused }}" hint-placeholder-val="{{ true }}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  </sc-if>
+                </button>
+                <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipNext }}" aria-label="Next track">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg>
+                </button>
               </div>
-              <div class="card-title np-title">{{ trackName }}</div>
-              <div class="card-body np-artist">{{ trackArtists }}</div>
-
-              <div class="{{ seekBarClass }}" onClick="{{ seekBarClick }}" onMouseMove="{{ seekBarDrag }}" role="slider" aria-label="Seek">
-                <div class="np-seek-fill" style="width:{{ progressPctStr }};"></div>
-                <div class="np-seek-thumb" style="left:{{ progressPctStr }};"></div>
-              </div>
-              <div class="np-times">
-                <span>{{ elapsedLabel }}</span>
-                <span>{{ durationLabel }}</span>
-              </div>
-
-              <sc-if value="{{ canControlPlayback }}" hint-placeholder-val="{{ false }}">
-                <div class="np-controls">
-                  <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipPrevious }}" title="Previous" aria-label="Previous track">
-                    <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M199.81,34a16,16,0,0,0-16.24.43L64,109.23V40a8,8,0,0,0-16,0V216a8,8,0,0,0,16,0V146.77l119.57,74.78A15.95,15.95,0,0,0,208,208.12V47.88A15.86,15.86,0,0,0,199.81,34ZM192,208,64.16,128,192,48.07Z"/></svg>
-                  </button>
-                  <button type="button" class="btn btn-primary np-play" onClick="{{ togglePlayback }}" title="{{ playPauseLabel }}" aria-label="{{ playPauseLabel }}">
-                    <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
-                      <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z"/></svg>
-                    </sc-if>
-                    <sc-if value="{{ isPaused }}" hint-placeholder-val="{{ true }}">
-                      <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
-                    </sc-if>
-                  </button>
-                  <button type="button" class="btn btn-ghost btn-icon" onClick="{{ skipNext }}" title="Next" aria-label="Next track">
-                    <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M200,32a8,8,0,0,0-8,8v69.23L72.43,34.45A15.95,15.95,0,0,0,48,47.88V208.12a16,16,0,0,0,24.43,13.43L192,146.77V216a8,8,0,0,0,16,0V40A8,8,0,0,0,200,32ZM64,207.93V48.05l127.84,80Z"/></svg>
-                  </button>
-                </div>
-              </sc-if>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{ noTrack }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-sub" style="white-space:normal;">{{ noTrackText }}</div>
+          </sc-if>
+          <sc-if value="{{ showNoDeviceWarning }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-hint" style="white-space:normal;color:var(--color-error);">{{ noDeviceWarningText }}
+              <button type="button" class="pod-item" style="padding:0;width:auto;" onClick="{{ dismissNoDeviceWarning }}">dismiss</button>
             </div>
-          </div>
-        </sc-if>
-        <sc-if value="{{ noTrack }}" hint-placeholder-val="{{ true }}">
-          <div style="display:flex;align-items:center;gap:var(--space-3);min-height:64px;">
-            <svg width="28" height="28" viewBox="0 0 256 256" fill="var(--color-neutral-500)"><path d="M56,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM88,24a8,8,0,0,0-8,8V224a8,8,0,0,0,16,0V32A8,8,0,0,0,88,24Zm40,32a8,8,0,0,0-8,8V192a8,8,0,0,0,16,0V64A8,8,0,0,0,128,56Zm40,32a8,8,0,0,0-8,8v64a8,8,0,0,0,16,0V96A8,8,0,0,0,168,88Zm40-16a8,8,0,0,0-8,8v96a8,8,0,0,0,16,0V80A8,8,0,0,0,208,72Z"/></svg>
-            <div class="card-body" style="opacity:.65;margin:0;">{{ noTrackText }}</div>
-          </div>
-        </sc-if>
-      </div>
-
-      <sc-if value="{{ showNoDeviceWarning }}" hint-placeholder-val="{{ false }}">
-        <div class="card fade-up" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);background:color-mix(in srgb, var(--color-error) 12%, var(--color-neutral-800));border:1px solid color-mix(in srgb, var(--color-error) 35%, transparent);">
-          <p class="card-body" style="margin:0;font-size:12px;color:var(--color-text);">{{ noDeviceWarningText }}</p>
-          <button type="button" class="btn btn-ghost" style="flex:none;font-size:12px;" onClick="{{ dismissNoDeviceWarning }}" aria-label="Dismiss">Dismiss</button>
-        </div>
-      </sc-if>
-
-      <sc-if value="{{ hasCapabilityNote }}" hint-placeholder-val="{{ false }}">
-        <div class="card fade-up" style="background:var(--color-neutral-800);border:1px solid var(--color-neutral-700);">
-          <p class="card-body" style="margin:0;font-size:12px;color:var(--color-neutral-300);">{{ capabilityNote }}</p>
-        </div>
-      </sc-if>
-
-      <div class="grid-2">
-        <div class="card elev-sm fade-up panel-card" style="display:flex;flex-direction:column;gap:var(--space-3);">
-          <div class="panel-title">
-            <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M56,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM88,24a8,8,0,0,0-8,8V224a8,8,0,0,0,16,0V32A8,8,0,0,0,88,24Zm40,32a8,8,0,0,0-8,8V192a8,8,0,0,0,16,0V64A8,8,0,0,0,128,56Zm40,32a8,8,0,0,0-8,8v64a8,8,0,0,0,16,0V96A8,8,0,0,0,168,88Zm40-16a8,8,0,0,0-8,8v96a8,8,0,0,0,16,0V80A8,8,0,0,0,208,72Z"/></svg>
-            DJ Mode
-          </div>
-          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-            <sc-for list="{{ modes }}" as="mode" hint-placeholder-count="3">
-              <button type="button" class="{{ mode.btnClass }} mode-btn" onClick="{{ mode.onClick }}" style="flex:1;min-width:140px;">{{ mode.label }}</button>
-            </sc-for>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-neutral-300);margin-top:var(--space-1);">
-            <span class="status-dot" style="width:7px;height:7px;border-radius:50%;background:{{ statusDotColor }};animation:{{ statusAnim }};flex:none;display:inline-block;"></span>
-            {{ engineStatusText }}
-          </div>
-        </div>
-
-        <div class="card elev-sm fade-up panel-card" style="display:flex;flex-direction:column;gap:var(--space-3);">
-          <div class="panel-title">
-            <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M128,176a48.05,48.05,0,0,0,48-48V64a48,48,0,0,0-96,0v64A48.05,48.05,0,0,0,128,176ZM96,64a32,32,0,0,1,64,0v64a32,32,0,0,1-64,0Zm40,143.6V240a8,8,0,0,1-16,0V207.6A80.11,80.11,0,0,1,48,128a8,8,0,0,1,16,0,64,64,0,0,0,128,0,8,8,0,0,1,16,0A80.11,80.11,0,0,1,136,207.6Z"/></svg>
-            My Turn
-          </div>
-          <p class="card-body" style="margin:0;color:var(--color-neutral-300);">Describe what you want next and get suggestions right away, without waiting for the current track to end.</p>
-          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-            <input class="input myturn-input" style="flex:1;min-width:180px;" type="text" value="{{ myTurnDraft }}" onChange="{{ updateMyTurnDraft }}" placeholder="e.g. slow it down, more chill and acoustic..." />
-            <button type="button" class="{{ suggestBtnClass }}" onClick="{{ manualSuggest }}" disabled="{{ isThinking }}">{{ suggestBtnLabel }}</button>
-          </div>
+          </sc-if>
           <sc-if value="{{ showRateLimitNotice }}" hint-placeholder-val="{{ false }}">
-            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-error);">
-              <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor" style="flex:none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"/></svg>
-              {{ rateLimitNoticeText }}
-            </div>
+            <div class="pod-hint" style="white-space:normal;">{{ rateLimitNoticeText }}</div>
           </sc-if>
-          <sc-if value="{{ canRetry }}" hint-placeholder-val="{{ false }}">
-            <button type="button" class="btn btn-ghost" style="align-self:flex-start;font-size:12px;" onClick="{{ retryLastSuggestion }}" title="Ask again, avoiding what was just queued">
-              Not feeling it? Try again
-            </button>
+          <sc-if value="{{ hasCapabilityNote }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-hint" style="white-space:normal;">{{ capabilityNote }}</div>
           </sc-if>
         </div>
-      </div>
+        <div class="pod-foot">
+          <button type="button" class="pod-item is-active" style="padding:0;width:auto;" onClick="{{ openModes }}">{{ activeModeLabel }}</button>
+          <span style="margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ engineStatusText }}</span>
+        </div>
+      </sc-if>
 
-      <div class="card elev-sm fade-up panel-card" style="display:flex;flex-direction:column;gap:var(--space-3);">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);flex-wrap:wrap;">
-          <div class="panel-title" style="margin:0;">
-            <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.59,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></svg>
-            History
-          </div>
-          <button type="button" class="btn btn-ghost" style="font-size:12px;" onClick="{{ toggleHistory }}">{{ historyToggleLabel }}</button>
+      <sc-if value="{{ isModes }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-body">
+          <sc-for list="{{ modeRows }}" as="row" hint-placeholder-count="4">
+            <button type="button" class="{{ row.itemClass }}" onClick="{{ row.onClick }}">{{ row.label }}</button>
+          </sc-for>
         </div>
-        <sc-if value="{{ showHistory }}" hint-placeholder-val="{{ false }}">
-          <div class="hist-list">
-            <sc-if value="{{ hasHistoryRows }}" hint-placeholder-val="{{ true }}">
-              <sc-for list="{{ historyRows }}" as="row" hint-placeholder-count="3">
-                <div class="hist-row">
-                  <div style="min-width:0;flex:1;">
-                    <div class="hist-title">{{ row.title }}</div>
-                    <div class="hist-artist">{{ row.artist }}</div>
-                    <sc-if value="{{ row.hasWhy }}" hint-placeholder-val="{{ true }}">
-                      <div class="hist-why">{{ row.why }}</div>
-                    </sc-if>
-                  </div>
-                  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;">
-                    <span class="{{ row.statusClass }}">{{ row.statusLabel }}</span>
-                    <span class="hist-ago">{{ row.ago }}</span>
-                    <div style="display:flex;gap:2px;">
-                      <button type="button" class="btn btn-ghost btn-icon hist-feedback-btn" onClick="{{ row.markLiked }}" title="Liked this suggestion" aria-label="Mark as liked" style="padding:3px;">
-                        <sc-if value="{{ row.isLiked }}" hint-placeholder-val="{{ false }}">
-                          <svg width="13" height="13" viewBox="0 0 256 256" fill="var(--color-accent-300)"><path d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32Z"/></svg>
-                        </sc-if>
-                        <sc-if value="{{ row.isLiked }}" hint-placeholder-val="{{ true }}">
-                          <svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor"><path d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z"/></svg>
-                        </sc-if>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-icon hist-feedback-btn" onClick="{{ row.markSkipped }}" title="Not feeling this one" aria-label="Mark as skipped" style="padding:3px;">
-                        <sc-if value="{{ row.isSkipped }}" hint-placeholder-val="{{ false }}">
-                          <svg width="13" height="13" viewBox="0 0 256 256" fill="var(--color-neutral-400)"><path d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Z"/></svg>
-                        </sc-if>
-                        <sc-if value="{{ row.isSkipped }}" hint-placeholder-val="{{ true }}">
-                          <svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor"><path d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z"/></svg>
-                        </sc-if>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-icon hist-feedback-btn" onClick="{{ row.vetoThisArtist }}" title="Never suggest this artist again" aria-label="Never suggest this artist again" style="padding:3px;">
-                        <svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.56,87.56,0,0,1-20.41,56.28L71.72,60.4A88,88,0,0,1,216,128ZM40,128A87.56,87.56,0,0,1,60.41,71.72L184.28,195.6A88,88,0,0,1,40,128Z"/></svg>
-                      </button>
-                    </div>
-                  </div>
+        <div class="pod-foot">center = apply / menu = back</div>
+      </sc-if>
+
+      <sc-if value="{{ isDjMode }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-body">
+          <div class="pod-line">{{ activeModeLabel }}</div>
+          <div class="pod-sub" style="white-space:normal;">{{ engineStatusText }}</div>
+          <div class="pod-hint">Queued this session: {{ queuedThisSession }}</div>
+          <sc-for list="{{ djRows }}" as="row" hint-placeholder-count="2">
+            <button type="button" class="{{ row.itemClass }}" onClick="{{ row.onClick }}">{{ row.label }}</button>
+          </sc-for>
+        </div>
+        <div class="pod-foot">auto-suggest runs near track end</div>
+      </sc-if>
+
+      <sc-if value="{{ isMyTurn }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-body">
+          <div class="pod-sub" style="white-space:normal;">Describe what you want next.</div>
+          <input class="pod-input" type="text" value="{{ myTurnDraft }}" onChange="{{ updateMyTurnDraft }}" placeholder="slow it down, more acoustic..." aria-label="What do you want next" />
+          <sc-for list="{{ myTurnRows }}" as="row" hint-placeholder-count="2">
+            <button type="button" class="{{ row.itemClass }}" onClick="{{ row.onClick }}">{{ row.label }}</button>
+          </sc-for>
+        </div>
+        <div class="pod-foot">{{ engineStatusText }}</div>
+      </sc-if>
+
+      <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-body">
+          <sc-if value="{{ hasHistoryRows }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ historyRows }}" as="row" hint-placeholder-count="3">
+              <div class="{{ row.itemClass }}">
+                <div style="min-width:0;flex:1;">
+                  <div class="pod-line">{{ row.title }}</div>
+                  <div class="pod-sub">{{ row.artist }}</div>
                 </div>
+                <span class="{{ row.statusClass }}">{{ row.statusLabel }}</span>
+                <span class="hist-ago">{{ row.ago }}</span>
+              </div>
+            </sc-for>
+          </sc-if>
+          <sc-if value="{{ noHistoryRows }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-hint">Nothing queued yet.</div>
+          </sc-if>
+          <sc-if value="{{ hasVetoedArtists }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-hint" style="margin-top:6px;">vetoed artists</div>
+            <sc-for list="{{ vetoedArtistRows }}" as="v" hint-placeholder-count="1">
+              <button type="button" class="pod-item" onClick="{{ v.remove }}">x {{ v.name }}</button>
+            </sc-for>
+          </sc-if>
+        </div>
+        <div class="pod-foot">center = open / menu = back</div>
+      </sc-if>
+
+      <sc-if value="{{ isTrackDetail }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-body">
+          <div class="pod-line">{{ detailTitle }}</div>
+          <div class="pod-sub">{{ detailArtist }}</div>
+          <sc-if value="{{ detailHasWhy }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-hint" style="white-space:normal;font-style:italic;">{{ detailWhy }}</div>
+          </sc-if>
+          <sc-for list="{{ detailRows }}" as="row" hint-placeholder-count="3">
+            <button type="button" class="{{ row.itemClass }}" onClick="{{ row.onClick }}">{{ row.label }}</button>
+          </sc-for>
+        </div>
+        <div class="pod-foot">{{ detailStatus }}</div>
+      </sc-if>
+
+      <sc-if value="{{ showLog }}" hint-placeholder-val="{{ false }}">
+        <div class="pod-overlay">
+          <div class="pod-crumb">activity log</div>
+          <div ref="{{ logRef }}" class="pod-body" aria-live="polite">
+            <sc-if value="{{ hasLogs }}" hint-placeholder-val="{{ false }}">
+              <sc-for list="{{ logs }}" as="entry" hint-placeholder-count="2">
+                <div class="{{ entry.lineClass }}">{{ entry.text }}</div>
               </sc-for>
             </sc-if>
-            <sc-if value="{{ noHistoryRows }}" hint-placeholder-val="{{ false }}">
-              <div style="opacity:.6;font-size:12px;">Nothing queued yet — the DJ's picks will show up here.</div>
+            <sc-if value="{{ noLogs }}" hint-placeholder-val="{{ true }}">
+              <div class="pod-hint">$ waiting for DJ activity...</div>
             </sc-if>
           </div>
-          <sc-if value="{{ hasVetoedArtists }}" hint-placeholder-val="{{ false }}">
-            <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-divider);">
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--color-neutral-500);margin-bottom:6px;">Never-suggest artists</div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                <sc-for list="{{ vetoedArtistRows }}" as="v" hint-placeholder-count="2">
-                  <span class="tag tag-neutral" style="display:inline-flex;align-items:center;gap:5px;">
-                    {{ v.name }}
-                    <button type="button" onClick="{{ v.remove }}" title="Allow suggestions from this artist again" aria-label="Remove from never-suggest list" style="background:none;border:none;padding:0;cursor:pointer;color:inherit;opacity:.6;line-height:1;font-size:13px;">×</button>
-                  </span>
-                </sc-for>
-              </div>
-            </div>
-          </sc-if>
-        </sc-if>
-      </div>
+          <div class="pod-foot"><button type="button" class="pod-item" style="padding:0;width:auto;" onClick="{{ toggleLog }}">close</button></div>
+        </div>
+      </sc-if>
 
-    </main>
-
-    <div class="log-panel">
-      <div class="log-header">
-        <span class="dot status-dot" style="background:{{ statusDotColor }};animation:{{ statusAnim }};"></span>
-        Activity Log
-      </div>
-      <div ref="{{ logRef }}" class="log-body">
-        <sc-if value="{{ hasLogs }}" hint-placeholder-val="{{ false }}">
-          <sc-for list="{{ logs }}" as="entry" hint-placeholder-count="2">
-            <div class="{{ entry.lineClass }}" style="display:flex;align-items:flex-start;gap:5px;">
-              <sc-if value="{{ entry.isQueued }}" hint-placeholder-val="{{ false }}">
-                <svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor" style="flex:none;margin-top:3px;"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></svg>
-              </sc-if>
-              <sc-if value="{{ entry.isError }}" hint-placeholder-val="{{ false }}">
-                <svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor" style="flex:none;margin-top:3px;"><path d="M165.66,101.66,139.31,128l26.35,26.34a8,8,0,0,1-11.32,11.32L128,139.31l-26.34,26.35a8,8,0,0,1-11.32-11.32L116.69,128,90.34,101.66a8,8,0,0,1,11.32-11.32L128,116.69l26.34-26.35a8,8,0,0,1,11.32,11.32ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></svg>
-              </sc-if>
-              <sc-if value="{{ entry.isSkip }}" hint-placeholder-val="{{ false }}">
-                <svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor" style="flex:none;margin-top:3px;"><path d="M200,32a8,8,0,0,0-8,8v69.23L72.43,34.45A15.95,15.95,0,0,0,48,47.88V208.12a16,16,0,0,0,24.43,13.43L192,146.77V216a8,8,0,0,0,16,0V40A8,8,0,0,0,200,32ZM64,207.93V48.05l127.84,80Z"/></svg>
-              </sc-if>
-              <span>{{ entry.text }}</span>
-            </div>
-          </sc-for>
-        </sc-if>
-        <sc-if value="{{ noLogs }}" hint-placeholder-val="{{ true }}">
-          <div style="display:flex;align-items:center;gap:8px;color:var(--color-neutral-500);">
-            <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor" style="flex:none;opacity:.7;"><path d="M56,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM88,24a8,8,0,0,0-8,8V224a8,8,0,0,0,16,0V32A8,8,0,0,0,88,24Zm40,32a8,8,0,0,0-8,8V192a8,8,0,0,0,16,0V64A8,8,0,0,0,128,56Zm40,32a8,8,0,0,0-8,8v64a8,8,0,0,0,16,0V96A8,8,0,0,0,168,88Zm40-16a8,8,0,0,0-8,8v96a8,8,0,0,0,16,0V80A8,8,0,0,0,208,72Z"/></svg>
-            $ waiting for DJ activity...
+      <sc-if value="{{ showConnect }}" hint-placeholder-val="{{ true }}">
+        <div class="pod-overlay">
+          <div class="pod-crumb">connect</div>
+          <div class="pod-body">
+            <svg class="connect-mark" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-300)" stroke-width="1.5" stroke-linecap="round" style="align-self:center;"><line x1="4" y1="9" x2="4" y2="15"></line><line x1="9" y1="4" x2="9" y2="20"></line><line x1="14" y1="2" x2="14" y2="22"></line><line x1="19" y1="7" x2="19" y2="17"></line></svg>
+            <div class="pod-sub" style="white-space:normal;">An AI co-pilot for your queue. Connect a provider to start.</div>
+            <select class="pod-input" value="{{ selectedProvider }}" onChange="{{ selectProvider }}" aria-label="Music provider">
+              <sc-for list="{{ providerOptions }}" as="p" hint-placeholder-count="3">
+                <option value="{{ p.id }}">{{ p.label }}</option>
+              </sc-for>
+            </select>
+            <sc-if value="{{ hasProviderNotice }}" hint-placeholder-val="{{ false }}">
+              <div class="pod-hint" style="white-space:normal;">{{ providerNotice }}</div>
+            </sc-if>
+            <sc-if value="{{ notConnected }}" hint-placeholder-val="{{ true }}">
+              <button type="button" class="pod-item is-focus" onClick="{{ connectProvider }}">{{ connectLabel }}</button>
+            </sc-if>
+            <sc-if value="{{ connected }}" hint-placeholder-val="{{ false }}">
+              <button type="button" class="pod-item" onClick="{{ disconnect }}">Disconnect</button>
+              <button type="button" class="pod-item is-focus" onClick="{{ closeConnect }}">Close</button>
+            </sc-if>
           </div>
-        </sc-if>
-      </div>
-      <span class="sr-only" role="status" aria-live="polite">{{ lastLogAnnouncement }}</span>
+          <div class="pod-foot">{{ connectedProviderLabel }}</div>
+        </div>
+      </sc-if>
     </div>
 
-  </sc-if>
+    <span class="sr-only" role="status" aria-live="polite">{{ lastLogAnnouncement }}</span>
 
-  <sc-if value="{{ notConnected }}" hint-placeholder-val="{{ true }}">
-    <div style="position:fixed;inset:0;z-index:-1;background:radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 60%);"></div>
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-6);text-align:center;padding:var(--space-6);">
-      <svg class="connect-mark fade-up" width="52" height="52" viewBox="0 0 256 256" fill="var(--color-accent-300)"><path d="M56,96v64a8,8,0,0,1-16,0V96a8,8,0,0,1,16,0ZM88,24a8,8,0,0,0-8,8V224a8,8,0,0,0,16,0V32A8,8,0,0,0,88,24Zm40,32a8,8,0,0,0-8,8V192a8,8,0,0,0,16,0V64A8,8,0,0,0,128,56Zm40,32a8,8,0,0,0-8,8v64a8,8,0,0,0,16,0V96A8,8,0,0,0,168,88Zm40-16a8,8,0,0,0-8,8v96a8,8,0,0,0,16,0V80A8,8,0,0,0,208,72Z"/></svg>
-      <div class="fade-up" style="animation-delay:.08s;">
-        <div style="font-family:var(--font-heading);font-weight:500;font-size:36px;margin-bottom:var(--space-2);background:linear-gradient(135deg, var(--color-text), var(--color-accent-300));-webkit-background-clip:text;background-clip:text;color:transparent;">Nocturne DJ</div>
-        <p style="max-width:440px;color:var(--color-neutral-300);margin:0 auto;">An AI co-pilot for your music queue. Connect your account and it listens for the right moment to line up what's next.</p>
+    <div class="pod-controls">
+      <div class="pod-wheel">
+        <button type="button" class="pod-zone up" onClick="{{ wheelUp }}" aria-label="{{ wheelUpLabel }}">{{ wheelUpLabel }}</button>
+        <button type="button" class="pod-zone right" onClick="{{ wheelRight }}" aria-label="{{ wheelRightLabel }}">{{ wheelRightLabel }}</button>
+        <button type="button" class="pod-zone down" onClick="{{ wheelDown }}" aria-label="{{ wheelDownLabel }}">{{ wheelDownLabel }}</button>
+        <button type="button" class="pod-zone left" onClick="{{ wheelLeft }}" aria-label="{{ wheelLeftLabel }}">{{ wheelLeftLabel }}</button>
+        <button type="button" class="pod-center" onClick="{{ wheelSelect }}" aria-label="Select">OK</button>
       </div>
-      <div class="fade-up" style="animation-delay:.16s;display:flex;flex-direction:column;align-items:center;gap:var(--space-2);">
-        <div class="card-kicker">Music provider</div>
-        <select class="input" value="{{ selectedProvider }}" onChange="{{ selectProvider }}" style="min-width:220px;">
-          <sc-for list="{{ providerOptions }}" as="p" hint-placeholder-count="3">
-            <option value="{{ p.id }}">{{ p.label }}</option>
-          </sc-for>
-        </select>
-        <sc-if value="{{ hasProviderNotice }}" hint-placeholder-val="{{ false }}">
-          <p class="card-body" style="margin:0;max-width:360px;color:var(--color-neutral-400);font-size:12px;">{{ providerNotice }}</p>
-        </sc-if>
+      <div class="pod-aux">
+        <button type="button" class="pod-btn" onClick="{{ wheelBack }}" aria-label="Back">MENU</button>
+        <button type="button" class="pod-btn" disabled="{{ true }}" title="Voice - coming soon" aria-label="Voice - coming soon">MIC</button>
       </div>
-      <button type="button" class="btn btn-primary fade-up" style="animation-delay:.24s;" onClick="{{ connectProvider }}">{{ connectLabel }}</button>
     </div>
-  </sc-if>
+
+    <div class="pod-credit">nocturne dj / {{ connectedProviderLabel }}</div>
+  </div>
+
+  <div class="pod-keys" aria-hidden="true">
+    <sc-for list="{{ keyHints }}" as="hint" hint-placeholder-count="4">
+      <div>{{ hint.text }}</div>
+    </sc-for>
+  </div>
 
 </div>
 </x-dc>
@@ -1105,7 +1130,6 @@ class Component extends DCLogic {
     isThinking: false,
     thinkingSince: null,
     canRetry: false,
-    showHistory: false,
     pollDegraded: false,
     noDeviceWarning: false,
     lastLogAnnouncement: '',
@@ -1113,7 +1137,14 @@ class Component extends DCLogic {
     logs: [],
     myTurnDraft: '',
     queuedThisSession: 0,
-    clockTick: 0
+    clockTick: 0,
+    activeScreen: 'root',
+    screenStack: [],
+    wheelFocus: 0,
+    detailIndex: 0,
+    showLog: false,
+    showConnect: false,
+    logUnread: false
   };
 
   pollInterval = null;
@@ -1155,9 +1186,11 @@ class Component extends DCLogic {
     // derives displayed progress from wall-clock time since the last poll,
     // not from state that only updates every 15s).
     this.tickInterval = setInterval(() => this.setState(s => ({ clockTick: s.clockTick + 1 })), 1000);
+    document.addEventListener('keydown', this.handleKeyDown);
   }
 
   componentWillUnmount() {
+    document.removeEventListener('keydown', this.handleKeyDown);
     if (this.pollInterval) clearTimeout(this.pollInterval);
     if (this.tickInterval) clearInterval(this.tickInterval);
     if (this.visibilityBound) {
@@ -1188,7 +1221,7 @@ class Component extends DCLogic {
       // hidden live-region in the template (see the .sr-only span next to
       // .log-body) instead of making .log-body itself aria-live, which would
       // re-announce all prior lines every time one is appended.
-      lastLogAnnouncement: text,
+      lastLogAnnouncement: text, logUnread: !s.showLog,
     }));
   };
 
@@ -2137,7 +2170,6 @@ class Component extends DCLogic {
     return min + ':' + String(sec).padStart(2, '0');
   };
 
-  toggleHistory = () => this.setState(s => ({ showHistory: !s.showHistory }));
 
   // Newest-first view of the suggestion log for the History panel. Capped at
   // 40 rows: the log itself holds up to 2000 for the avoid-list guard, but
@@ -2182,8 +2214,184 @@ class Component extends DCLogic {
     return Math.floor(hr / 24) + 'd ago';
   };
 
+  // ── device navigation (iPod chassis) ─────────────────────────────
+  // One screen visible at a time; screenStack is the MENU/back trail.
+  // ponytail: plain array stack, no router.
+  SCREEN_TITLES = { root: 'NOW PLAYING', modes: 'MODES', djmode: 'DJ MODE', myturn: 'MY TURN', history: 'HISTORY', trackdetail: 'HISTORY / TRACK' };
+
+  // Per-screen selectable rows. Single source of truth: the template renders
+  // these and the wheel/keyboard select acts on the focused one.
+  screenActions = () => {
+    const s = this.state;
+    if (s.activeScreen === 'modes') {
+      return Object.keys(MODES).map(id => ({
+        label: (s.activeMode === id ? '> ' : '  ') + MODES[id].label,
+        active: s.activeMode === id,
+        run: () => { this.selectMode(id); this.goBack(); }
+      }));
+    }
+    if (s.activeScreen === 'djmode') {
+      return [
+        { label: '  Pick a mode', run: () => this.goTo('modes') },
+        { label: s.activeMode ? '  Clear mode' : '  No mode active', run: () => { if (s.activeMode) this.selectMode(s.activeMode); } }
+      ];
+    }
+    if (s.activeScreen === 'myturn') {
+      const rows = [{ label: s.isThinking ? '  Thinking...' : '  Suggest now', run: this.manualSuggest }];
+      if (s.canRetry && !s.isThinking) rows.push({ label: '  Not feeling it? Try again', run: this.retryLastSuggestion });
+      return rows;
+    }
+    if (s.activeScreen === 'history') {
+      return this.buildHistoryView().map((r, i) => ({
+        label: r.title, row: r,
+        run: () => { this.setState({ detailIndex: i }); this.goTo('trackdetail'); }
+      }));
+    }
+    if (s.activeScreen === 'trackdetail') {
+      const row = this.buildHistoryView()[s.detailIndex];
+      if (!row) return [];
+      return [
+        { label: (row.isLiked ? '* ' : '  ') + 'Like', active: row.isLiked, run: row.markLiked },
+        { label: (row.isSkipped ? '* ' : '  ') + 'Not for me', active: row.isSkipped, run: row.markSkipped },
+        { label: '  Veto ' + (row.artist || 'artist'), run: () => { row.vetoThisArtist(); this.goBack(); } }
+      ];
+    }
+    return [];
+  };
+
+  goTo = (screen) => this.setState(s => ({
+    activeScreen: screen,
+    screenStack: [...s.screenStack, s.activeScreen],
+    wheelFocus: 0
+  }));
+
+  goBack = () => this.setState(s => {
+    if (s.showLog) return { showLog: false };
+    if (s.showConnect && s.accessToken) return { showConnect: false };
+    if (!s.screenStack.length) return { activeScreen: 'root', wheelFocus: 0 };
+    const stack = s.screenStack.slice();
+    const prev = stack.pop();
+    return { activeScreen: prev, screenStack: stack, wheelFocus: 0 };
+  });
+
+  moveFocus = (delta) => this.setState(s => {
+    const n = this.screenActions().length;
+    if (!n) return {};
+    return { wheelFocus: (s.wheelFocus + delta + n) % n };
+  });
+
+  wheelUp = () => {
+    if (this.state.activeScreen === 'root') return this.goTo('modes');
+    this.moveFocus(-1);
+  };
+  wheelDown = () => {
+    if (this.state.activeScreen === 'root') return this.goTo('history');
+    this.moveFocus(1);
+  };
+  wheelLeft = () => {
+    if (this.state.activeScreen === 'root') return this.goTo('myturn');
+    this.goBack();
+  };
+  wheelRight = () => {
+    if (this.state.activeScreen === 'root') return this.goTo('djmode');
+  };
+  wheelSelect = () => {
+    const items = this.screenActions();
+    const item = items[this.state.wheelFocus];
+    if (item) item.run();
+  };
+  wheelBack = () => this.goBack();
+
+  openModes = () => this.goTo('modes');
+  toggleLog = () => this.setState(s => ({ showLog: !s.showLog, logUnread: false }));
+  openConnect = () => this.setState({ showConnect: true });
+  closeConnect = () => this.setState({ showConnect: false });
+
+  // Keyboard mirrors the wheel exactly -- same handlers, no parallel logic.
+  handleKeyDown = (e) => {
+    const tag = (e.target && e.target.tagName) || '';
+    const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+    if (e.key === 'Escape') { e.target && e.target.blur && e.target.blur(); this.goBack(); return; }
+    if (typing) {
+      if (e.key === 'Enter') { e.preventDefault(); this.wheelSelect(); }
+      return;
+    }
+    const map = { ArrowUp: this.wheelUp, ArrowDown: this.wheelDown, ArrowLeft: this.wheelLeft, ArrowRight: this.wheelRight, Enter: this.wheelSelect, ' ': this.wheelSelect };
+    const fn = map[e.key];
+    if (fn) { e.preventDefault(); fn(); }
+  };
+
+  deviceVals = () => {
+    const s = this.state;
+    const screen = s.activeScreen;
+    const items = this.screenActions();
+    const focus = Math.min(s.wheelFocus, Math.max(0, items.length - 1));
+    const rowClass = (i, extra) => 'pod-item' + (i === focus ? ' is-focus' : '') + (extra ? ' ' + extra : '');
+    const rows = items.map((it, i) => ({
+      id: screen + '-' + i,
+      label: it.label,
+      itemClass: rowClass(i, it.active ? 'is-active' : ''),
+      onClick: () => { this.setState({ wheelFocus: i }); it.run(); }
+    }));
+    const historyRows = screen === 'history' ? items.map((it, i) => Object.assign({}, it.row, {
+      itemClass: rowClass(i)
+    })) : [];
+    const atRoot = screen === 'root';
+    const detail = screen === 'trackdetail' ? this.buildHistoryView()[s.detailIndex] : null;
+    const keyHints = [
+      { id: 'k1', text: atRoot ? '↑  modes' : '↑  up' },
+      { id: 'k2', text: atRoot ? '↓  history' : '↓  down' },
+      { id: 'k3', text: atRoot ? '←  my turn' : '←  back' },
+      { id: 'k4', text: atRoot ? '→  dj mode' : '→  —' },
+      { id: 'k5', text: 'enter  select' },
+      { id: 'k6', text: 'esc  menu' }
+    ];
+    return {
+      isRoot: atRoot,
+      isModes: screen === 'modes',
+      isDjMode: screen === 'djmode',
+      isMyTurn: screen === 'myturn',
+      isHistory: screen === 'history',
+      isTrackDetail: screen === 'trackdetail',
+      breadcrumb: (atRoot ? '' : 'MENU / ') + (this.SCREEN_TITLES[screen] || ''),
+      modeRows: screen === 'modes' ? rows : [],
+      djRows: screen === 'djmode' ? rows : [],
+      myTurnRows: screen === 'myturn' ? rows : [],
+      historyRows,
+      hasHistoryRows: historyRows.length > 0,
+      noHistoryRows: screen === 'history' && historyRows.length === 0,
+      detailTitle: detail ? detail.title : '',
+      detailArtist: detail ? detail.artist : '',
+      detailWhy: detail ? detail.why : '',
+      detailHasWhy: !!(detail && detail.why),
+      detailStatus: detail ? detail.statusLabel + ' / ' + detail.ago : '',
+      detailRows: screen === 'trackdetail' ? rows : [],
+      activeModeLabel: s.activeMode ? '> ' + MODES[s.activeMode].label : '> no mode',
+      wheelUpLabel: atRoot ? 'MODES' : 'UP',
+      wheelDownLabel: atRoot ? 'HIST' : 'DOWN',
+      wheelLeftLabel: atRoot ? 'MINE' : 'BACK',
+      wheelRightLabel: atRoot ? 'DJ' : '',
+      wheelUp: this.wheelUp,
+      wheelDown: this.wheelDown,
+      wheelLeft: this.wheelLeft,
+      wheelRight: this.wheelRight,
+      wheelSelect: this.wheelSelect,
+      wheelBack: this.wheelBack,
+      openModes: this.openModes,
+      toggleLog: this.toggleLog,
+      openConnect: this.openConnect,
+      closeConnect: this.closeConnect,
+      showLog: s.showLog,
+      showConnect: s.showConnect || !s.accessToken,
+      logAlertFlag: s.logUnread ? '1' : '0',
+      clockLabel: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      connectionTitle: s.accessToken ? this.activeProvider.label + ' connected' : 'Not connected',
+      keyHints
+    };
+  };
+
   renderVals() {
-    const { provider: providerId, providerNotice, accessToken, track, activeMode, isThinking, thinkingSince, canRetry, showHistory, pollDegraded, logs, myTurnDraft, queuedThisSession, lastLogAnnouncement, rateLimitRemaining } = this.state;
+    const { provider: providerId, providerNotice, accessToken, track, activeMode, isThinking, thinkingSince, canRetry, pollDegraded, logs, myTurnDraft, queuedThisSession, lastLogAnnouncement, rateLimitRemaining } = this.state;
     const provider = this.activeProvider;
     const connected = !!accessToken;
     const hasTrack = !!track;
@@ -2242,8 +2450,7 @@ class Component extends DCLogic {
     else if (activeMode && isThinking) engineStatusText = 'AI analyzing vibe and curating next tracks...';
     else if (activeMode && pollDegraded) engineStatusText = provider.label + ' is not responding — retrying slowly.';
     else if (activeMode) engineStatusText = 'Watching "' + MODES[activeMode].label + '" — will act near track end.';
-    const historyRows = showHistory ? this.buildHistoryView() : [];
-    const vetoedArtistsList = showHistory ? this.loadVetoedArtists() : [];
+    const vetoedArtistsList = this.state.activeScreen === 'history' ? this.loadVetoedArtists() : [];
     const vetoedArtistRows = vetoedArtistsList.map(name => ({ name, remove: () => this.unvetoArtist(name) }));
     let capabilityNote = '';
     if (connected && providerId === 'youtube') {
@@ -2300,7 +2507,7 @@ class Component extends DCLogic {
       rateLimitNoticeText: rateLimitRemaining === 0
         ? 'No AI requests left this minute — the next one will be rate limited.'
         : rateLimitRemaining + ' AI request' + (rateLimitRemaining === 1 ? '' : 's') + ' left this minute.',
-      connectedProviderLabel: provider.label + ' Connected',
+      connectedProviderLabel: provider.label + (connected ? ' connected' : ' not connected'),
       providerShortLabel: provider.label,
       connectLabel: 'Connect to ' + provider.label,
       connectProvider: this.connectProvider,
@@ -2320,14 +2527,9 @@ class Component extends DCLogic {
       // reinforce with, making it identical to pressing Suggest now again.
       canRetry: canRetry && !isThinking,
       retryLastSuggestion: this.retryLastSuggestion,
-      toggleHistory: this.toggleHistory,
-      showHistory,
-      historyToggleLabel: showHistory ? 'Hide history' : 'Show history',
-      historyRows,
-      hasHistoryRows: historyRows.length > 0,
-      noHistoryRows: showHistory && historyRows.length === 0,
       hasVetoedArtists: vetoedArtistRows.length > 0,
-      vetoedArtistRows
+      vetoedArtistRows,
+      ...this.deviceVals()
     };
   }
 }

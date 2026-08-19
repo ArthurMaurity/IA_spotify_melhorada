@@ -517,10 +517,40 @@ section('triggerDJ: isThinking must never latch (the regression this fixes)');
       check('formatAgo handles hours', inst.formatAgo(3 * 3600000) === '3h ago');
       check('formatAgo handles days', inst.formatAgo(50 * 3600000) === '2d ago');
 
-      inst.state.showHistory = false;
-      check('history is hidden by default', inst.renderVals().showHistory === false);
-      inst.toggleHistory();
-      check('toggleHistory flips the flag', inst.state.showHistory === true);
+      inst.state.activeScreen = 'history';
+      const v = inst.renderVals();
+      check('history screen renders its rows', v.isHistory === true && v.historyRows.length === 40);
+      check('history rows carry a focus class', /is-focus/.test(v.historyRows[0].itemClass));
+    }
+
+    section('device navigation: wheel + stack');
+    {
+      const inst = makeInstance(sb);
+      check('starts on root', inst.state.activeScreen === 'root');
+      inst.wheelUp();
+      check('up from root opens MODES', inst.state.activeScreen === 'modes');
+      const modeCount = inst.screenActions().length;
+      inst.wheelDown();
+      check('down moves the cursor inside a list', inst.state.wheelFocus === 1);
+      inst.wheelUp(); inst.wheelUp();
+      check('cursor wraps around', inst.state.wheelFocus === modeCount - 1);
+      inst.wheelSelect();
+      check('select applies the mode and returns to root', inst.state.activeScreen === 'root' && !!inst.state.activeMode);
+      inst.wheelRight();
+      check('right from root opens DJ MODE', inst.state.activeScreen === 'djmode');
+      inst.wheelBack();
+      check('MENU goes back one level', inst.state.activeScreen === 'root');
+      inst.wheelLeft();
+      check('left from root opens MY TURN', inst.state.activeScreen === 'myturn');
+      inst.wheelLeft();
+      check('left inside a screen goes back', inst.state.activeScreen === 'root');
+      // makeInstance stubs addLog out, so exercise the same state patch it applies.
+      inst.setState(s => ({ logs: [...s.logs, { id: 1, text: '> test' }], logUnread: !s.showLog }));
+      check('a new log entry raises the unread flag', inst.state.logUnread === true);
+      inst.toggleLog();
+      check('opening the log clears unread', inst.state.showLog === true && inst.state.logUnread === false);
+      inst.wheelBack();
+      check('MENU closes the log overlay first', inst.state.showLog === false && inst.state.activeScreen === 'root');
     }
 
     section('renderVals: contract with the template');
@@ -528,9 +558,12 @@ section('triggerDJ: isThinking must never latch (the regression this fixes)');
       const inst = makeInstance(sb);
       const v = inst.renderVals();
       const required = [
-        'canRetry', 'retryLastSuggestion', 'toggleHistory', 'showHistory',
-        'historyToggleLabel', 'historyRows', 'hasHistoryRows', 'noHistoryRows',
-        'isThinking', 'engineStatusText', 'connected', 'logs',
+        'canRetry', 'retryLastSuggestion', 'historyRows', 'hasHistoryRows',
+        'noHistoryRows', 'isThinking', 'engineStatusText', 'connected', 'logs',
+        'isRoot', 'isModes', 'isDjMode', 'isMyTurn', 'isHistory', 'breadcrumb',
+        'modeRows', 'wheelUp', 'wheelDown', 'wheelLeft', 'wheelRight',
+        'wheelSelect', 'wheelBack', 'showLog', 'showConnect', 'clockLabel',
+        'keyHints', 'activeModeLabel',
       ];
       const missing = required.filter(k => !(k in v));
       check('renderVals exposes every key the new template reads', missing.length === 0, 'missing: ' + missing.join(', '));
