@@ -175,6 +175,10 @@
     .pod-crumb{flex:none;padding:7px 10px;font-size:9px;letter-spacing:.18em;font-weight:600;text-transform:uppercase;color:var(--color-neutral-500);border-bottom:1px solid var(--color-neutral-800);}
     .pod-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px;display:flex;flex-direction:column;gap:8px;animation:fade-up .25s ease both;}
     .pod-body > *{flex:0 0 auto;}
+    /* NOW PLAYING never scrolls: the album art absorbs whatever height is
+       left after the fixed rows, instead of pushing them out of view. */
+    .pod-body-fit{overflow:hidden;}
+    .pod-body-fit .pod-art{flex:1 1 auto;min-height:0;max-height:none;width:auto;max-width:100%;}
     .pod-body::-webkit-scrollbar{width:5px}
     .pod-screen .np-seek{height:5px;background:var(--color-neutral-700);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
     .pod-screen .np-seek-fill{background:var(--color-accent-400);box-shadow:0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);}
@@ -223,6 +227,12 @@
     .pod-input{width:100%;box-sizing:border-box;background:#0d0f18;border:1px solid var(--color-neutral-700);border-radius:6px;color:var(--color-text);font-family:inherit;font-size:12px;padding:7px 8px;}
     .pod-input:focus{outline:2px solid var(--color-accent-300);outline-offset:1px;}
 
+    /* short viewports: shrink the device instead of scrolling the page */
+    @media (max-height: 720px){
+      .pod-screen{height:min(46vh,300px);}
+      .pod-wheel{width:clamp(120px,26vh,150px);}
+    }
+
     /* keyboard legend — desktop only */
     .pod-keys{position:fixed;right:20px;bottom:20px;font-family:var(--font-body);font-size:10px;color:var(--color-neutral-500);line-height:1.7;text-align:right;pointer-events:none;}
     @media (max-width: 900px){ .pod-keys{display:none;} }
@@ -259,7 +269,7 @@
       <div class="pod-crumb">{{ breadcrumb }}</div>
 
       <sc-if value="{{ isRoot }}" hint-placeholder-val="{{ true }}">
-        <div class="pod-body">
+        <div class="pod-body pod-body-fit">
           <sc-if value="{{ hasTrack }}" hint-placeholder-val="{{ false }}">
             <img class="pod-art" src="{{ trackAlbumArt }}" alt="{{ trackName }}" onLoad="{{ markArtLoaded }}" />
             <div class="pod-line">{{ trackName }}</div>
