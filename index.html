@@ -323,9 +323,17 @@
 
       <sc-if value="{{ isModes }}" hint-placeholder-val="{{ false }}">
         <div class="pod-body">
-          <sc-for list="{{ modeRows }}" as="row" hint-placeholder-count="4">
+          <sc-for list="{{ modeRows }}" as="row" hint-placeholder-count="3">
             <button type="button" class="{{ row.itemClass }}" onClick="{{ row.onClick }}">{{ row.label }}</button>
           </sc-for>
+          <sc-if value="{{ isAnchorScreen }}" hint-placeholder-val="{{ false }}">
+            <div class="pod-sub" style="white-space:normal;margin-top:6px;">{{ anchorStatusText }}</div>
+            <sc-if value="{{ hasCurrentArtist }}" hint-placeholder-val="{{ false }}">
+              <button type="button" class="pod-item" onClick="{{ anchorOnCurrentArtist }}">{{ anchorCurrentArtistLabel }}</button>
+            </sc-if>
+            <input class="pod-input" type="text" value="{{ anchorDraft }}" onChange="{{ updateAnchorDraft }}" placeholder="artist name or a described vibe..." aria-label="Anchor input" />
+            <button type="button" class="pod-item" onClick="{{ applyAnchorDraft }}">set anchor</button>
+          </sc-if>
         </div>
         <div class="pod-foot">center = apply / menu = back</div>
       </sc-if>
@@ -470,15 +478,42 @@ const CLIENT_ID = 'da88cb72c0e7480fa5d07d651723b926';
 // Placeholders -- see README "Adding your own credentials" for setup steps.
 // Both are public identifiers (safe to ship in client code, unlike API secrets).
 const YOUTUBE_CLIENT_ID = '533185696900-sujhtf3uhklnqqml44r3rqkfcdh58vms.apps.googleusercontent.com';
+// Reduced to 3 modes on purpose (see IMPROVEMENT_PLAN.md item 4.7). The
+// previous 7 modes (gaming/study/focus/party/windDown/discovery) had real
+// overlap (study vs focus differed only in "few vocals" vs "zero vocals")
+// and too many near-identical choices for the listener to pick with
+// confidence. Their useful behavior wasn't discarded, it was folded in:
+// - `default` now also carries windDown's session-length-aware wind-down,
+//   instead of requiring a manual mode switch late at night.
+// - party/discovery's opposite axis (hits vs deep cuts) is intentionally
+//   NOT baked into `mix` as a fixed parameter -- it's better served by an
+//   ad-hoc My Turn instruction ("play something well-known" / "surprise
+//   me with something obscure") than forced into one of 3 fixed modes.
+// - study/focus/gaming's activity-consistency need lives inside `anchor`
+//   now: anchoring on a *described vibe* ("instrumental, deep focus, zero
+//   vocals") covers the same ground an artist anchor would, through the
+//   same anchorInput field, with zero extra state.
 const MODES = {
-  default: { label: 'Default Flow', vibe: 'a natural continuation of the current energy and genre' },
-  gaming: { label: 'Gaming Mode', vibe: 'high-energy, mostly instrumental or electronic tracks with a driving rhythm, good for focus during gameplay' },
-  study: { label: 'Work & Study', vibe: 'low-lyric, ambient or lo-fi focus music that stays unobtrusive' },
-  party: { label: 'Party', vibe: 'high-energy, crowd-pleasing tracks — favor each artist\'s most recognizable, well-known hits over deep cuts so a room full of people immediately knows the song' },
-  focus: { label: 'Deep Focus', vibe: 'purely instrumental tracks with zero vocals, steady and unobtrusive, safe for uninterrupted concentration' },
-  windDown: { label: 'Night Wind-Down', vibe: 'a gradually decreasing energy arc across the session — each suggestion should feel calmer and lower-tempo than the last, easing toward a quiet, sleep-friendly close rather than staying at the current energy level' },
-  discovery: { label: 'Discovery', vibe: 'deliberately favor lesser-known deep cuts and album tracks over each artist\'s most obvious hits, even for artists the listener has not proven familiarity with — the goal is introducing something they likely have not heard, overriding the usual preference for well-known singles' }
+  default: { label: 'Default Flow', vibe: 'a natural continuation of the current energy and genre — but if the session has been running a long time, let the energy gradually ease down rather than staying flat, the way a late-night listening session naturally winds down' },
+  mix: { label: 'Mix', vibe: 'deliberately alternate between different genres and styles across the session — avoid settling into one consistent genre, actively vary the style from suggestion to suggestion while still following the listener\'s general taste' },
+  // `anchor` is the one parametric mode: its vibe text is a template filled
+  // in at prompt-build time from `anchorInput` (see buildAnchorVibe below),
+  // not a static string like the other two.
+  anchor: { label: 'Anchor', vibe: null, parametric: true }
 };
+
+// Builds the `anchor` mode's vibe text from whatever the listener anchored
+// on -- either an artist name (from the "Anchor on this artist" quick
+// button) or a freely described vibe/activity (from the text field). The
+// prompt doesn't need to structurally distinguish the two: both become the
+// same free-text guiding thread for the session.
+function buildAnchorVibe(anchorInput) {
+  const trimmed = (anchorInput || '').trim();
+  if (!trimmed) {
+    return 'the listener selected Anchor mode but has not set an anchor yet — treat this like Default Flow (a natural continuation of the current energy and genre) until an artist or vibe is anchored';
+  }
+  return 'the listener has set an anchor for this session — it may be an artist name or a described vibe/activity: "' + trimmed + '". Explore around that anchor (the artist\'s style and closely related artists, or the described vibe/mood/activity) as the guiding thread for the whole session, not necessarily tied to the currently playing track';
+}
 
 // MusicProvider interface: { id, label, implemented, clientId, authEndpoint,
 // tokenEndpoint, scopes, getCurrentlyPlaying, getRecentlyPlayed,
@@ -1150,6 +1185,11 @@ class Component extends DCLogic {
     accessToken: null,
     track: null,
     activeMode: null,
+    // What the listener anchored Anchor mode on -- an artist name or a
+    // freely described vibe, both just free text (see buildAnchorVibe).
+    // Cleared whenever Anchor is deactivated or another mode is chosen.
+    anchorInput: null,
+    anchorDraft: '',
     isThinking: false,
     thinkingSince: null,
     canRetry: false,
@@ -1644,11 +1684,47 @@ class Component extends DCLogic {
     this.seekBarClick(e);
   };
 
+  buildActiveModeLabel = () => {
+    const s = this.state;
+    if (!s.activeMode) return '> no mode';
+    const label = '> ' + MODES[s.activeMode].label;
+    return (s.activeMode === 'anchor' && s.anchorInput) ? label + ': ' + s.anchorInput : label;
+  };
+
   selectMode = (modeId) => {
     const isClearing = this.state.activeMode === modeId;
-    this.setState({ activeMode: isClearing ? null : modeId });
+    // Leaving Anchor mode (either clearing it or switching to a different
+    // mode) drops whatever was anchored -- it shouldn't silently linger and
+    // apply if the listener comes back to Anchor later without noticing.
+    const leavingAnchor = this.state.activeMode === 'anchor' && (isClearing || modeId !== 'anchor');
+    this.setState({
+      activeMode: isClearing ? null : modeId,
+      anchorInput: leavingAnchor ? null : this.state.anchorInput,
+      anchorDraft: leavingAnchor ? '' : this.state.anchorDraft
+    });
     this.lastTriggeredId = null;
     this.addLog(isClearing ? '> Mode cleared.' : '> Mode set to ' + MODES[modeId].label + '.');
+  };
+
+  updateAnchorDraft = (e) => this.setState({ anchorDraft: e.target.value });
+
+  // Free-text anchor: covers both "type an artist name" and "describe a
+  // vibe" through the same field (see buildAnchorVibe near MODES).
+  applyAnchorDraft = () => {
+    const value = (this.state.anchorDraft || '').trim();
+    if (!value) return;
+    this.setState({ anchorInput: value, activeMode: 'anchor' });
+    this.lastTriggeredId = null;
+    this.addLog('> Anchored on: ' + value);
+  };
+
+  // Quick anchor from the currently playing track's artist -- zero typing.
+  anchorOnCurrentArtist = () => {
+    const artists = this.state.track ? this.state.track.artists : '';
+    if (!artists) return;
+    this.setState({ activeMode: 'anchor', anchorInput: artists, anchorDraft: '' });
+    this.lastTriggeredId = null;
+    this.addLog('> Anchored on artist: ' + artists);
   };
 
   updateMyTurnDraft = (e) => this.setState({ myTurnDraft: e.target.value });
@@ -1932,6 +2008,10 @@ class Component extends DCLogic {
         this.addLog('> My Turn: ' + customPrompt);
       }
       const mode = MODES[this.state.activeMode] || MODES.default;
+      // Anchor is the one parametric mode -- its vibe text isn't a static
+      // string in MODES, it's built from whatever the listener anchored on
+      // (see buildAnchorVibe near MODES' definition).
+      const modeVibe = mode.parametric ? buildAnchorVibe(this.state.anchorInput) : mode.vibe;
       const [genres, historyData, topGenres, audioFeatures, queueItems, topTracksData] = await Promise.all([
         track ? this.fetchArtistGenres(track.artistId) : Promise.resolve([]),
         this.fetchRecentHistory(),
@@ -1988,7 +2068,11 @@ class Component extends DCLogic {
       // runOnce resolves how many tracks it managed to queue, so the caller can
       // decide whether a cached batch was actually usable.
       const runOnce = async (useCache) => {
-        const cacheKey = this.cacheKeyFor(track, customPrompt, mode.label);
+        // Pass modeVibe, not just mode.label: Anchor is parametric, so two
+        // sessions both "in Anchor mode" but anchored on different
+        // artists/vibes must not collide on the same cache key (mode.label
+        // alone would be identical -- "Anchor" -- for both).
+        const cacheKey = this.cacheKeyFor(track, customPrompt, mode.label + '|' + modeVibe);
         let candidates = useCache ? this.readGroqCache(cacheKey) : null;
         let fromCache = !!candidates;
 
@@ -2015,7 +2099,7 @@ class Component extends DCLogic {
               // prompt text simply doesn't mention it.
               sessionMinutes: Math.round((Date.now() - (this.sessionStartedAt || Date.now())) / 60000),
               queuedThisSession: this.state.queuedThisSession,
-              mode: mode.label + ': ' + mode.vibe,
+              mode: mode.label + ': ' + modeVibe,
               customPrompt: customPrompt || ''
             })
           });
@@ -2253,7 +2337,11 @@ class Component extends DCLogic {
       return Object.keys(MODES).map(id => ({
         label: (s.activeMode === id ? '> ' : '  ') + MODES[id].label,
         active: s.activeMode === id,
-        run: () => { this.selectMode(id); this.goBack(); }
+        // Anchor stays on the MODES screen after selecting it -- picking it
+        // just opens the "set anchor" input (see isAnchorScreen in the
+        // template); the other two modes still apply-and-go-back immediately
+        // since they have nothing further to configure.
+        run: () => { this.selectMode(id); if (id !== 'anchor') this.goBack(); }
       }));
     }
     if (s.activeScreen === 'djmode') {
@@ -2396,7 +2484,18 @@ class Component extends DCLogic {
       detailHasWhy: !!(detail && detail.why),
       detailStatus: detail ? detail.statusLabel + ' / ' + detail.ago : '',
       detailRows: screen === 'trackdetail' ? rows : [],
-      activeModeLabel: s.activeMode ? '> ' + MODES[s.activeMode].label : '> no mode',
+      activeModeLabel: this.buildActiveModeLabel(),
+      isAnchorScreen: screen === 'modes' && s.activeMode === 'anchor',
+      anchorDraft: s.anchorDraft,
+      // The template DSL only resolves dot-paths/equality, not ternaries or
+      // string concatenation -- so both display strings are pre-built here
+      // rather than composed inline in the template.
+      anchorStatusText: s.anchorInput ? ('Anchored on: ' + s.anchorInput) : 'Not anchored yet.',
+      updateAnchorDraft: this.updateAnchorDraft,
+      applyAnchorDraft: this.applyAnchorDraft,
+      anchorOnCurrentArtist: this.anchorOnCurrentArtist,
+      hasCurrentArtist: !!(s.track && s.track.artists),
+      anchorCurrentArtistLabel: s.track ? ('anchor on ' + s.track.artists) : '',
       wheelUpLabel: atRoot ? 'MODES' : 'UP',
       wheelDownLabel: atRoot ? 'HIST' : 'DOWN',
       wheelLeftLabel: atRoot ? 'MINE' : 'BACK',

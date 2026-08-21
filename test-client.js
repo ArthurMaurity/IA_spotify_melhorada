@@ -89,7 +89,7 @@ function buildSandbox() {
 function loadComponent() {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
-  vm.runInContext(scriptSource + '\n;globalThis.__Component = Component; globalThis.__trackKey = trackKey;', sandbox);
+  vm.runInContext(scriptSource + '\n;globalThis.__Component = Component; globalThis.__trackKey = trackKey; globalThis.__MODES = MODES; globalThis.__buildAnchorVibe = buildAnchorVibe;', sandbox);
   return sandbox;
 }
 
@@ -534,8 +534,18 @@ section('triggerDJ: isThinking must never latch (the regression this fixes)');
       check('down moves the cursor inside a list', inst.state.wheelFocus === 1);
       inst.wheelUp(); inst.wheelUp();
       check('cursor wraps around', inst.state.wheelFocus === modeCount - 1);
+      // MODES order is [default, mix, anchor] (see MODES in index.html).
+      // wheelFocus is at modeCount - 1 (the last row, Anchor) here from the
+      // wrap-around check above. Move to Mix (index 1) to test the ordinary
+      // "select applies and returns to root" behavior first.
+      inst.state.wheelFocus = 1;
       inst.wheelSelect();
-      check('select applies the mode and returns to root', inst.state.activeScreen === 'root' && !!inst.state.activeMode);
+      check('select applies the mode and returns to root', inst.state.activeScreen === 'root' && inst.state.activeMode === 'mix');
+      inst.wheelUp();
+      inst.state.wheelFocus = modeCount - 1;
+      inst.wheelSelect();
+      check('selecting Anchor stays on MODES to collect input', inst.state.activeScreen === 'modes' && inst.state.activeMode === 'anchor');
+      inst.wheelBack();
       inst.wheelRight();
       check('right from root opens DJ MODE', inst.state.activeScreen === 'djmode');
       inst.wheelBack();
@@ -582,6 +592,54 @@ section('triggerDJ: isThinking must never latch (the regression this fixes)');
       inst.state.thinkingSince = Date.now() - 25000;
       check('a slow trigger is called out in the status text',
         /taking longer than usual/.test(inst.renderVals().engineStatusText), inst.renderVals().engineStatusText);
+    }
+
+    // ========================================== 3 modes (IMPROVEMENT_PLAN 4.7) =
+    section('modes: reduced to Default / Mix / Anchor');
+    {
+      const sb = loadComponent();
+      const MODES = sb.__MODES;
+      const buildAnchorVibe = sb.__buildAnchorVibe;
+
+      check('exactly 3 modes remain', Object.keys(MODES).length === 3, Object.keys(MODES).join(','));
+      check('the old 7 modes are gone', !MODES.gaming && !MODES.study && !MODES.focus && !MODES.party && !MODES.windDown && !MODES.discovery);
+      check('default, mix, anchor are present', !!MODES.default && !!MODES.mix && !!MODES.anchor);
+      check('anchor is the only parametric mode', MODES.anchor.parametric === true && !MODES.default.parametric && !MODES.mix.parametric);
+      check('default absorbed the wind-down behavior', /gradually ease down/.test(MODES.default.vibe));
+      check('mix is about alternating genres', /alternate between different genres/.test(MODES.mix.vibe));
+
+      check('buildAnchorVibe with an artist name', /Pixies/.test(buildAnchorVibe('Pixies')));
+      check('buildAnchorVibe with a described vibe', /instrumental, deep focus/.test(buildAnchorVibe('instrumental, deep focus')));
+      check('buildAnchorVibe falls back to Default-like text when empty', /Default Flow|natural continuation/.test(buildAnchorVibe('')));
+      check('buildAnchorVibe treats null the same as empty', /Default Flow|natural continuation/.test(buildAnchorVibe(null)));
+
+      const inst = makeInstance(sb);
+      check('starts with no anchor', inst.state.anchorInput === null);
+
+      inst.selectMode('mix');
+      check('selectMode applies mix', inst.state.activeMode === 'mix');
+
+      inst.state.anchorDraft = 'The Smiths';
+      inst.applyAnchorDraft();
+      check('applyAnchorDraft sets anchorInput and switches to anchor mode', inst.state.anchorInput === 'The Smiths' && inst.state.activeMode === 'anchor');
+
+      inst.selectMode('mix');
+      check('switching away from anchor clears anchorInput', inst.state.anchorInput === null);
+
+      inst.state.track = { artists: 'Radiohead' };
+      inst.anchorOnCurrentArtist();
+      check('anchorOnCurrentArtist anchors on the playing track\'s artist', inst.state.anchorInput === 'Radiohead' && inst.state.activeMode === 'anchor');
+
+      inst.selectMode('anchor'); // isClearing: same mode toggles off
+      check('clearing anchor mode also clears anchorInput', inst.state.activeMode === null && inst.state.anchorInput === null);
+
+      const v = inst.renderVals();
+      check('anchorStatusText reflects "not anchored" when cleared', v.anchorStatusText === 'Not anchored yet.');
+      inst.state.activeMode = 'anchor';
+      inst.state.anchorInput = 'lo-fi, rainy day';
+      const v2 = inst.renderVals();
+      check('anchorStatusText reflects the current anchor', v2.anchorStatusText === 'Anchored on: lo-fi, rainy day');
+      check('activeModeLabel includes the anchor text', v2.activeModeLabel === '> Anchor: lo-fi, rainy day');
     }
 
     console.log('\n' + '='.repeat(52));

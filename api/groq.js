@@ -245,11 +245,12 @@ function buildUserPrompt({ track, artist, genres, history, topGenres, topArtists
   }
   if (typeof sessionMinutes === 'number' && sessionMinutes > 0) {
     // Only modes whose vibe text actually references session progression
-    // (e.g. "Night Wind-Down" — see MODES in index.html) act on this; other
-    // modes' prompt text never mentions "the session", so this line is
-    // effectively inert for them. Sent unconditionally rather than gated
-    // client-side so adding a future energy-arc mode doesn't require a
-    // second wiring point.
+    // (Default Flow's wind-down clause — see MODES in index.html, folded in
+    // from the old dedicated Night Wind-Down mode per IMPROVEMENT_PLAN.md
+    // item 4.7) act on this; other modes' prompt text never mentions "the
+    // session", so this line is effectively inert for them. Sent
+    // unconditionally rather than gated client-side so adding a future
+    // energy-arc mode doesn't require a second wiring point.
     const queuedNote = typeof queuedThisSession === 'number' && queuedThisSession > 0
       ? `, ${queuedThisSession} track${queuedThisSession === 1 ? '' : 's'} queued so far`
       : '';
